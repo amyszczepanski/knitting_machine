@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2009  Steve Conklin 
+# Copyright 2009-2012  Steve Conklin 
 # steve at conklinhouse dot com
 #
 # This program is free software; you can redistribute it and/or
@@ -67,6 +67,8 @@ import os.path
 import string
 from array import *
 import serial
+import time
+import logging
 
 version = '1.0'
 
@@ -268,9 +270,11 @@ class Disk():
 
 class PDDemulator():
 
-    def __init__(self, basename):
+    def __init__(self, basename, flowcontrol = False, cport = '/dev/ttyUSB0'):
         self.verbose = True
+        self.flowcontrol = flowcontrol
         self.noserial = False
+        self.cport = cport
         self.ser = None
         self.disk = Disk(basename)
         self.FDCmode = False
@@ -282,11 +286,15 @@ class PDDemulator():
     def __del__(self):
         return
 
-    def open(self, cport='/dev/ttyUSB0'):
+    def open(self):
+
         if self.noserial is False:
-            self.ser = serial.Serial(port=cport, baudrate=9600, parity='N', stopbits=1, timeout=1, xonxoff=0, rtscts=0, dsrdtr=0)
+            if self.flowcontrol:
+                self.ser = serial.Serial(port=self.cport, baudrate=9600, parity='N', stopbits=1, timeout=None, xonxoff=0, rtscts=1, dsrdtr=1)
+            else:
+                self.ser = serial.Serial(port=self.cport, baudrate=9600, parity='N', stopbits=1, timeout=1, xonxoff=0, rtscts=0, dsrdtr=0)
             if self.ser == None:
-                print 'Unable to open serial device %s' % cport
+                print 'Unable to open serial device %s' % self.cport
                 raise IOError
         return
 
@@ -298,13 +306,10 @@ class PDDemulator():
 
     def dumpchars(self):
         num = 1
-        while 1:
+        while self.ser.inWaiting():
             inc = self.ser.read()
-            if len(inc) != 0:
-                print 'flushed 0x%02X (%d)' % (ord(inc), num)
-                num = num + 1
-            else:
-                break
+            print 'flushed 0x%02X (%d)' % (ord(inc), num)
+            num = num + 1
         return
 
     def readsomechars(self, num):
@@ -312,9 +317,10 @@ class PDDemulator():
         return sch
 
     def readchar(self):
-        inc = ''
-        while len(inc) == 0:
-            inc = self.ser.read()
+        if not self.flowcontrol:
+            while self.ser.inWaiting():
+                time.sleep(.001)
+        inc = self.ser.read()
         return inc
             
     def writebytes(self, bytes):
@@ -614,23 +620,78 @@ class PDDemulator():
         # return to Operational Mode
         return
 
-# meat and potatos here
+if __name__ == '__main__':
+    import optparse
 
-if len(sys.argv) < 3:
-    print '%s version %s' % (sys.argv[0], version)
-    print 'Usage: %s basedir serialdevice' % sys.argv[0]
-    sys.exit()
+    parser = optparse.OptionParser(
+        usage = "%prog [options] serialdevice",
+        description = "Emulator for Brother FB100 floppy drive",
+        epilog = "")
 
-print 'Preparing . . . Please Wait'
-emu = PDDemulator(sys.argv[1])
+    parser.add_option("-d", "--device",
+        dest = "serial_device",
+        action = "store",
+        type = 'string',
+        help = "Serial port device path",
+        default = "/dev/ttyUSB0"
+    )
 
-emu.open(cport=sys.argv[2])
+    parser.add_option("-b", "--basedir",
+        dest = "basedir",
+        action = "store",
+        type = 'string',
+        help = "base directory for storing disk files",
+    )
 
-print 'PDDtmulate Version 1.1 Ready!'
+    parser.add_option("-v", "--verbose",
+        dest = "verbosity",
+        action = "count",
+        help = "print more diagnostic messages (option can be given multiple times)",
+        default = 0
+    )
+
+    parser.add_option("-u", "--useflowcontrol",
+        dest = "flowcontrol",
+        action = "store_true",
+        help = "enable hardware flow control for the serial port)",
+        default = False
+    )
+
+    (options, args) = parser.parse_args()
+
+    if options.basedir is None:
+        parser.error('base directory required as an argument')
+
+    if options.verbosity > 3:
+        options.verbosity = 3
+    level = (
+        logging.WARNING,
+        logging.INFO,
+        logging.DEBUG,
+        logging.NOTSET,
+        )[options.verbosity]
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger('root').setLevel(logging.INFO)
+    logging.getLogger('emulator').setLevel(level)
+
+    logging.info("Brother Disk Emulator version %s- type Ctrl-C / BREAK to quit" % (version,))
+    logging.info("Preparing . . . Please Wait")
+    if options.flowcontrol:
+        logging.info("Using serial port: %s with flow control" % (options.serial_device,))
+    else:
+        logging.info("Using serial port: %s without flow control" % (options.serial_device,))
+    logging.info("base directory: %s" % (options.basedir,))
+
 try:
+    emu = PDDemulator(options.basedir, cport=options.serial_device, flowcontrol = options.flowcontrol)
+
+    emu.open()
+
+    logging.info('PDDemulate Version 1.1 Ready!')
+
     while 1:
         emu.handleRequests()
 except (KeyboardInterrupt):
     pass
 
-emu.close()
+    logging.info('--- exit ---')
