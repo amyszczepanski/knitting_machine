@@ -226,6 +226,76 @@ def roundfour(val):
     else:
         return val
 
+class Pattern():
+    """
+    This class encapsulates all information needed to define a pattern for the Brother
+    KH930 knitting machine.
+    UNDER DEVELOPMENT NOT FUNCTIONAL
+    """
+
+    def __init__(self):
+        self.verbose = False
+        self.number = 0
+        self.rowdata = None
+        self.memodata = None
+        self.numStitches = 0
+        self.numRows = 0
+        self.memo = None # memo offset in memory
+        self.offset = None # pattern offset in memory
+        self.pattend = None # pattern pointer (pptr)
+        self.unk_nibble = None
+        self.unknown = None
+        return
+
+    def initFromFileData(self, knitData, patternNumber):
+        """
+        Find the specified pattern number in the data file,
+        and initialize a Pattern Object from the file data
+        """
+        return
+
+    def delete(self):
+        return
+
+    def asciiDump(self, pattern_number):
+        pd = self.patterns[pattern_number]
+        rd = pd['rowdata']
+        for row in range(pd['rows']):
+            for stitch in range(pd['stitches']):
+                if(rd[row][stitch]) == 0:
+                    print ' ',
+                else:
+                    print '*',
+            print
+
+    def outputImgFile(self, pattern_number, outfilename):
+        """
+        Export the specified pattern to an image file.
+        File type is indicated by the file extension.
+        Types supported are those supported by the underlying
+        python Image module
+        """
+        pd = self.patterns[pattern_number]
+        rd = pd['rowdata']
+        rows = pd['rows']
+        stitches = pd['stitches']
+
+        img = Image.new("1", (stitches, rows))
+        # Fill in pixel data
+        pix = img.load()
+        for row in range(rows):
+            for stitch in range(stitches):
+                if rd[row][stitch]:
+                    pv = 0
+                else:
+                    pv = 1
+                pix[stitch, row] = pv
+        img.save(outfilename)
+        return
+
+
+
+
 class KnitFile():
     """
     Encapsulate the data contained in a Brother knitting machine data set.
@@ -406,7 +476,7 @@ class KnitFile():
                                     'rowdata':rowdata, 'memodata':memodata, 'changed':False}
         return
 
-    def clearFileData():
+    def clearFileData(self):
         """
         Clear the file memory as if a memory clear has been performed on
         the knitting machine (code 888)
@@ -422,6 +492,28 @@ class KnitFile():
         self.data[0x0710] = 0x07
         self.data[0x0711] = 0xF9
         self.data[0x07EA] = 0x10
+        return
+
+    def addPattern(self, patternNumber, rowdata, memodata):
+        """
+        Add a pattern to pattern memory. If the pattern number is an existing pattern,
+        the existing pattern is replaced. If there is not enough room for the new pattern,
+        an exception is raised
+        """
+        return
+
+    def rmPattern(self, patternNumber):
+        """
+        Delete the specified pattern
+        """
+        # This should model behavior of the knitting machine delete
+        return
+
+    def getFreeRows(self, numStitches):
+        """
+        Return the approximate number of rows which may be added, if each row
+        contiains the specified number of stitches
+        """
         return
 
     def write(self):
@@ -447,41 +539,6 @@ class KnitFile():
         self.tracknum = None
         return
 
-    def patternAsciiDump(self, pattern_number):
-        pd = self.patterns[pattern_number]
-        rd = pd['rowdata']
-        for row in range(pd['rows']):
-            for stitch in range(pd['stitches']):
-                if(rd[row][stitch]) == 0:
-                    print ' ',
-                else:
-                    print '*',
-            print
-
-    def pattern2ImgFile(self, pattern_number, outfilename):
-        """
-        Export the specified pattern to an image file.
-        File type is indicated by the file extension.
-        Types supported are those supported by the underlying
-        python Image module
-        """
-        pd = self.patterns[pattern_number]
-        rd = pd['rowdata']
-        rows = pd['rows']
-        stitches = pd['stitches']
-
-        img = Image.new("1", (stitches, rows))
-        # Fill in pixel data
-        pix = img.load()
-        for row in range(rows):
-            for stitch in range(stitches):
-                if rd[row][stitch]:
-                    pv = 0
-                else:
-                    pv = 1
-                pix[stitch, row] = pv
-        img.save(outfilename)
-        return
 
     def exportCDLData(self, offsetList, outfilename, annotate=False, exclude = ['pattern', 'needle', 'motif']):
         """
