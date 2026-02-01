@@ -13,7 +13,7 @@ dependencies = [
 packages = ["app", "experimental", "textconversion"]
 
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [dependency-groups]
@@ -21,3 +21,22 @@ dev = [
     "black>=26.1.0",
     "flake8>=7.3.0",
 ]
+
+[tool.black]
+line-length = 88
+target-version = ['py313']
+skip-string-normalization = false
+exclude = '''
+(
+    /file-analysis/
+    | /process_image.py
+    | /splitfile2track.py
+    | /PDDemu-debug.py
+    | /addpattern.py
+    | /experimental/
+)
+'''
+
+[tool.uv.scripts]
+format = "black ."
+lint = "flake8 ."

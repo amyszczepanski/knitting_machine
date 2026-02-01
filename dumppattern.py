@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2009  Steve Conklin 
+# Copyright 2009  Steve Conklin
 # steve at conklinhouse dot com
 #
 # This program is free software; you can redistribute it and/or
@@ -21,21 +21,29 @@ import sys
 import brother
 
 # import convenience functions from brother module
-from brother import roundeven, roundfour, roundeight, nibblesPerRow, bytesPerPattern, bytesForMemo
+from brother import (
+    roundeven,
+    roundfour,
+    roundeight,
+    nibblesPerRow,
+    bytesPerPattern,
+    bytesForMemo,
+)
 
 DEBUG = 0
 
-version = '1.0'
+version = "1.0"
+
 
 class PatternDumper:
 
     def __init__(self):
         self.printInfoCallback = self.printInfo
 
-    def dumppattern(self,argv):
+    def dumppattern(self, argv):
         if len(argv) < 1:
             raise ArgumentsException()
-        
+
         result = Result()
 
         if len(argv) == 2:
@@ -44,10 +52,10 @@ class PatternDumper:
             patt = 0
 
         bf = brother.brotherFile(argv[0])
-        
+
         if patt == 0:
             result.patterns = bf.getPatterns()
-        
+
             if DEBUG:
                 print("-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+")
                 print("Data file")
@@ -57,40 +65,87 @@ class PatternDumper:
                 for i in range(99):
                     print("program entry" + i)
                     # each block is 7 bytes
-                    bytenum = i*7
+                    bytenum = i * 7
 
                     pattused = bf.getIndexedByte(bytenum)
-                    print ("\t" + hex(bytenum) + ": " + hex(pattused))
-                    if (pattused == 1):
-                        print( "\t(used)")
+                    print("\t" + hex(bytenum) + ": " + hex(pattused))
+                    if pattused == 1:
+                        print("\t(used)")
                     else:
-                        print( "\t(unused)")
-                        #print "\t-skipped-"
-                        #continue
+                        print("\t(unused)")
+                        # print "\t-skipped-"
+                        # continue
                     bytenum += 1
 
                     unk1 = bf.getIndexedByte(bytenum)
                     print("\t" + hex(bytenum) + ": " + hex(unk1) + "\t(unknown)")
                     bytenum += 1
 
-                    rows100 =  bf.getIndexedByte(bytenum)
-                    print("\t" + hex(bytenum) + ": " + hex(rows100) + "\t(rows = " +  (rows100 >> 4)*100 +  " + " +  (rows100 & 0xF)*10)
+                    rows100 = bf.getIndexedByte(bytenum)
+                    print(
+                        "\t"
+                        + hex(bytenum)
+                        + ": "
+                        + hex(rows100)
+                        + "\t(rows = "
+                        + (rows100 >> 4) * 100
+                        + " + "
+                        + (rows100 & 0xF) * 10
+                    )
                     bytenum += 1
 
-                    rows1 =  bf.getIndexedByte(bytenum)
-                    print("\t" + hex(bytenum) + ": " + hex(rows1) + "\t\t+ " +  (rows1 >> 4) +  " stiches = " +  (rows1 & 0xF)*100 + "+")
+                    rows1 = bf.getIndexedByte(bytenum)
+                    print(
+                        "\t"
+                        + hex(bytenum)
+                        + ": "
+                        + hex(rows1)
+                        + "\t\t+ "
+                        + (rows1 >> 4)
+                        + " stiches = "
+                        + (rows1 & 0xF) * 100
+                        + "+"
+                    )
                     bytenum += 1
 
-                    stitches10 =  bf.getIndexedByte(bytenum)
-                    print("\t" + hex(bytenum) + ": " + hex(stitches10) + "\t\t+ " +  (stitches10 >> 4)*10 +  " +" +  (stitches10 & 0xF) + ")")
+                    stitches10 = bf.getIndexedByte(bytenum)
+                    print(
+                        "\t"
+                        + hex(bytenum)
+                        + ": "
+                        + hex(stitches10)
+                        + "\t\t+ "
+                        + (stitches10 >> 4) * 10
+                        + " +"
+                        + (stitches10 & 0xF)
+                        + ")"
+                    )
                     bytenum += 1
 
                     prog100 = bf.getIndexedByte(bytenum)
-                    print("\t" + hex(bytenum) + ": " + hex(prog100) + "\t(unknown  +  prog# = " +  (prog100&0xF) * 100 + "+")
+                    print(
+                        "\t"
+                        + hex(bytenum)
+                        + ": "
+                        + hex(prog100)
+                        + "\t(unknown  +  prog# = "
+                        + (prog100 & 0xF) * 100
+                        + "+"
+                    )
                     bytenum += 1
 
                     prog10 = bf.getIndexedByte(bytenum)
-                    print("\t" + hex(bytenum) + ": " + hex(prog10) + "\t\t + " +  (prog10>>4) * 10 + "+" + (prog10&0xF) + ")")
+                    print(
+                        "\t"
+                        + hex(bytenum)
+                        + ": "
+                        + hex(prog10)
+                        + "\t\t + "
+                        + (prog10 >> 4) * 10
+                        + "+"
+                        + (prog10 & 0xF)
+                        + ")"
+                    )
                     bytenum += 1
 
                 print("============================================")
@@ -98,39 +153,42 @@ class PatternDumper:
                 # now we're onto data data
 
                 # dump the first program
-                pointer = 0x6DF      # this is the 'bottom' of the memory
+                pointer = 0x6DF  # this is the 'bottom' of the memory
                 for i in range(99):
                     # of course, not all patterns will get dumped
-                    pattused = bf.getIndexedByte(i*7)
-                    if (pattused != 1):
+                    pattused = bf.getIndexedByte(i * 7)
+                    if pattused != 1:
                         # :(
                         break
                     # otherwise its a valid pattern
-                    print("pattern bank #" +  i)
+                    print("pattern bank #" + i)
                     # calc pattern size
-                    rows100 =  bf.getIndexedByte(i*7 + 2)
-                    rows1 =  bf.getIndexedByte(i*7 + 3)
-                    stitches10 =  bf.getIndexedByte(i*7 + 4)
+                    rows100 = bf.getIndexedByte(i * 7 + 2)
+                    rows1 = bf.getIndexedByte(i * 7 + 3)
+                    stitches10 = bf.getIndexedByte(i * 7 + 4)
 
-                    rows = (rows100 >> 4)*100 + (rows100 & 0xF)*10 + (rows1 >> 4);
-                    stitches = (rows1 & 0xF)*100 + (stitches10 >> 4)*10 + (stitches10 & 0xF)
-                    print("rows = " +  rows +  "stitches = " +  stitches)
-        #        print "total nibs per row = ", nibblesPerRow(stitches)
-
+                    rows = (rows100 >> 4) * 100 + (rows100 & 0xF) * 10 + (rows1 >> 4)
+                    stitches = (
+                        (rows1 & 0xF) * 100
+                        + (stitches10 >> 4) * 10
+                        + (stitches10 & 0xF)
+                    )
+                    print("rows = " + rows + "stitches = " + stitches)
+                    #        print "total nibs per row = ", nibblesPerRow(stitches)
 
                     # dump the memo data
                     print("memo length =" + bytesForMemo(rows))
-                    for i in range (bytesForMemo(rows)):
+                    for i in range(bytesForMemo(rows)):
                         b = pointer - i
                         print("\t" + hex(b) + ": " + hex(bf.getIndexedByte(b)))
                     pointer -= bytesForMemo(rows)
 
-                    print("pattern length = " +  bytesPerPattern(stitches +  rows))
-                    for i in range (bytesPerPattern(stitches +  rows)):
+                    print("pattern length = " + bytesPerPattern(stitches + rows))
+                    for i in range(bytesPerPattern(stitches + rows)):
                         b = pointer - i
                         print("\t" + hex(b) + ": " + hex(bf.getIndexedByte(b)))
                         for j in range(8):
-                            if (bf.getIndexedByte(b) & (1<<j)):
+                            if bf.getIndexedByte(b) & (1 << j):
                                 print("*")
                             else:
                                 print(" ")
@@ -139,77 +197,81 @@ class PatternDumper:
                     # print it out in nibbles per row?
                     for row in range(rows):
                         for nibs in range(nibblesPerRow(stitches)):
-                            n = bf.getIndexedNibble(pointer, nibblesPerRow(stitches)*row + nibs)
+                            n = bf.getIndexedNibble(
+                                pointer, nibblesPerRow(stitches) * row + nibs
+                            )
                             print(hex(n))
                             for j in range(8):
-                                if (n & (1<<j)):
+                                if n & (1 << j):
                                     print("*")
                                 else:
                                     print(" ")
-                        print( "")
-                    pointer -=  bytesPerPattern(stitches, rows)
+                        print("")
+                    pointer -= bytesPerPattern(stitches, rows)
 
-                #for i in range (0x06DF, 99*7, -1):
+                # for i in range (0x06DF, 99*7, -1):
                 #    print "\t",hex(i),": ",hex(bf.getIndexedByte(i))
-                
-                
 
         else:
-            self.printInfoCallback( 'Searching for pattern number %d' % patt)
+            self.printInfoCallback("Searching for pattern number %d" % patt)
             pats = bf.getPatterns(patt)
             if len(pats) == 0:
                 raise PatternNotFoundException(patt)
             else:
                 stitches = pats[0]["stitches"]
                 rows = pats[0]["rows"]
-                self.printInfoCallback( '%3d Stitches, %3d Rows' % (stitches, rows))
+                self.printInfoCallback("%3d Stitches, %3d Rows" % (stitches, rows))
                 result.pattern = bf.getPattern(patt)
         return result
-        
+
     def printInfo(self, printMsg):
         print(printMsg)
-    
+
+
 class ArgumentsException(Exception):
     pass
+
 
 class PatternNotFoundException(Exception):
     def __init__(self, patternNumber):
         self.patternNumber = patternNumber
-        
+
+
 class Result:
     def __init__(self):
-        self.patterns = None # list of pat["number"], pat["stitches"], pat["rows"]
-        self.pattern = None # pattern object: array of [rows][stitches] 
-    
-        
+        self.patterns = None  # list of pat["number"], pat["stitches"], pat["rows"]
+        self.pattern = None  # pattern object: array of [rows][stitches]
+
+
 if __name__ == "__main__":
     try:
-        #print sys.argv
+        # print sys.argv
         dumper = PatternDumper()
         result = dumper.dumppattern(sys.argv[1:])
-        if (result.patterns is not None):
-            print('Pattern   Stitches   Rows')
+        if result.patterns is not None:
+            print("Pattern   Stitches   Rows")
             for pat in result.patterns:
-                print('  %3d       %3d      %3d' % (pat["number"], pat["stitches"], pat["rows"]))
-        elif (result.pattern is not None):
+                print(
+                    "  %3d       %3d      %3d"
+                    % (pat["number"], pat["stitches"], pat["rows"])
+                )
+        elif result.pattern is not None:
             for row in range(len(result.pattern)):
                 for stitch in range(len(result.pattern[row])):
-                    if(result.pattern[row][stitch]) == 0:
-                        print( ' ')
+                    if (result.pattern[row][stitch]) == 0:
+                        print(" ")
                     else:
-                        print( '*')
+                        print("*")
                 print
 
-        
     except ArgumentsException as e:
-        print('Usage: %s file [patternnum]' % sys.argv[0])
-        print('Dumps user programs (901-999) from brother data files')
+        print("Usage: %s file [patternnum]" % sys.argv[0])
+        print("Dumps user programs (901-999) from brother data files")
         sys.exit(1)
     except IOError as e:
         print(e)
-        print('Could not open file ', sys.argv[1])
+        print("Could not open file ", sys.argv[1])
         sys.exit(1)
     except PatternNotFoundException as e:
-        print('Pattern %d not found' % e.patternNumber)
+        print("Pattern %d not found" % e.patternNumber)
         sys.exit(1)
-        
