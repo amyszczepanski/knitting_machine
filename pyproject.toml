@@ -36,7 +36,3 @@ exclude = '''
     | /experimental/
 )
 '''
-
-[tool.uv.scripts]
-format = "black ."
-lint = "flake8 ."

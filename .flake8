@@ -1,0 +1,4 @@
+[flake8]
+max-line-length = 88
+exclude = .uv, .venv, file-analysis, experimental, img, process_image.py, splitfile2track.py, PDDemu-debug.py, addpattern.py
+ignore = E203,W503,E501
