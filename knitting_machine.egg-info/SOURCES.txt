@@ -1,0 +1,10 @@
+README.md
+pyproject.toml
+app/__init__.py
+experimental/FDif.py
+experimental/driveread.py
+knitting_machine.egg-info/PKG-INFO
+knitting_machine.egg-info/SOURCES.txt
+knitting_machine.egg-info/dependency_links.txt
+knitting_machine.egg-info/requires.txt
+knitting_machine.egg-info/top_level.txt
