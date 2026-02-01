@@ -73,15 +73,15 @@ class PatternInserter:
             raise PatternNotFoundException(pattnum)
 
         if (height != thePattern["rows"] or width != thePattern["stitches"]):
-            raise InserterException("Pattern is the wrong size, the BMP is ",height,"x",width,"and the pattern is ",thePattern["rows"], "x", thePattern["stitches"])
+            raise InserterException(f"Pattern is the wrong size, the BMP is {height} x {width} and the pattern is {thePattern['rows']} x {thePattern['stitches']}")
 
         # debugging stuff here
         x = 0
         y = 0
 
         x = width - 1
-        for y in xrange(height):
-            for x in xrange(width):
+        for y in range(height):
+            for x in range(width):
                 value = TheImage.getpixel((x,y))
                 if value:
                     self.printPattern('* ')
@@ -201,8 +201,8 @@ if __name__ == "__main__":
     try:
         inserter.insertPattern(argv[1],argv[2],argv[3],argv[4])
     except PatternNotFoundException as e:
-        print( 'ERROR: Pattern %d not found' % e.patternNumber)
+        print(f'ERROR: Pattern {e.patternNumber} not found')
         sys.exit(1)
     except InserterException as e:
-        print( 'ERROR: ',e.getMessage())
+        print(f"ERROR: {e.getMessage()}")
         sys.exit(1)

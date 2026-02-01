@@ -1,18 +1,7 @@
-[tool.poetry]
+[project]
 name = "knitting-machine"
 version = "0.1.0"
-description = ""
-authors = ["Your Name <you@example.com>"]
+description = "Tricking a Brother knitting machine into thinking that a computer is a disk drive"
 readme = "README.md"
-packages = [{include = "knitting_machine"}]
-
-[tool.poetry.dependencies]
-python = "^3.10"
-serial = "^0.0.97"
-pillow = "^9.5.0"
-pyserial = "^3.5"
-
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires-python = ">=3.13"
+dependencies = []

@@ -51,8 +51,8 @@ unknownList = {'0700':0x0700, '0701':0x0701,
 
 def nibbles(achar):
     #print '0x%02X' % ord(achar)
-    msn = (ord(achar) & 0xF0) >> 4
-    lsn = ord(achar) & 0x0F
+    msn = (int(achar) & 0xF0) >> 4
+    lsn = int(achar) & 0x0F
     return msn, lsn
 
 def hto(hundreds, tens, ones):
@@ -81,7 +81,7 @@ def nibblesPerRow(stitches):
 def bytesPerPattern(stitches, rows):
     nibbs = rows * nibblesPerRow(stitches)
     bytes = roundeven(nibbs)/2
-    return bytes
+    return int(bytes)
 
 def bytesForMemo(rows):
     bytes = roundeven(rows)/2
@@ -155,7 +155,7 @@ class brotherFile(object):
     def getIndexedNibble(self, offset, nibble):
         # nibbles is zero based
         bytes = nibble/2
-        m, l = nibbles(self.data[offset-bytes])
+        m, l = nibbles(self.data[int(offset-bytes)])
         if nibble % 2:
             return m
         else:
@@ -163,8 +163,8 @@ class brotherFile(object):
 
     def getRowData(self, pattOffset, stitches, rownumber):
         row=array('B')
-        nibspr = nibblesPerRow(stitches)
-        startnib = nibspr * rownumber
+        nibspr = int(nibblesPerRow(stitches))
+        startnib = nibspr * int(rownumber)
         endnib = startnib + nibspr
 
         for i in range(startnib, endnib, 1):
@@ -200,11 +200,11 @@ class brotherFile(object):
         idx = 0
         pptr = initPatternOffset
         for pi in range(1, 100):
-            flag = ord(self.data[idx])
+            flag = int(self.data[idx])
             if self.verbose:
                 print( 'Entry %d, flag is 0x%02X' % (pi, flag))
             idx = idx + 1
-            unknown = ord(self.data[idx])
+            unknown = int(self.data[idx])
             idx = idx + 1
             rh, rt = nibbles(self.data[idx])
             idx = idx + 1

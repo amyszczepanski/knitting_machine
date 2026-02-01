@@ -265,7 +265,7 @@ class KnittingApp(tkinter.Tk):
         self._printPatternBody(pattern, marginx, marginy, bitWidth, bitHeight)
         secCoordbig, secCoordsmall, secCoord2 = 0, marginy / 2, marginy
         step, bigStep = 5, 10
-        for i in xrange(0, max(patternWidth, patternHeight)+1, step):
+        for i in range(0, max(patternWidth, patternHeight)+1, step):
             secCoord = secCoordbig if i % bigStep == 0 else secCoordsmall
             if i < patternWidth:
                 xCoord = marginx + i * bitWidth
@@ -278,8 +278,8 @@ class KnittingApp(tkinter.Tk):
         patternHeight = len(pattern)
         patternWidth = len(pattern[0])
         self.patternCanvas.clear()
-        for row in xrange(patternHeight):
-            for stitch in xrange(patternWidth):
+        for row in range(patternHeight):
+            for stitch in range(patternWidth):
                 if (pattern[row][stitch]) == 1:
                     fill='black'
                     border='white'
@@ -339,8 +339,8 @@ class KnittingApp(tkinter.Tk):
             patternHeight = len(pattern)
             patternWidth = len(pattern[0])
             img = Image.new('RGB', (patternWidth, patternHeight), None)
-            for x in xrange(patternWidth):
-                for y in xrange(patternHeight):
+            for x in range(patternWidth):
+                for y in range(patternHeight):
                     color = (0,0,0) if pattern[patternHeight - y - 1][x] == 1 else (255,255,255)
                     img.putpixel((x,y), color)
             img = img.convert('1')

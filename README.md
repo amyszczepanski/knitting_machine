@@ -1,21 +1,17 @@
 Please see the Changelog file for the latest changes
 
-=== QUICK START ===
+# Quick start
 
 Execute script guimain.py to start graphical application.
 This application can start floppy disk emulator and provides means to download/upload patterns and modify them.
 It is based on existing python scripts, which were slightly modified for better user experience in graphical application.
 
-=================
+# Notes
 
 These files are related to the Brother KH-930E knitting machine, and other similar models.
 
-=== NOTE ===
-
 The emulator script was named PDDemulate-1.0.py, and the instructions in a lor of forums for using it have that name.
 The script has been renamed, and is now simply PDDemulate.py.
-
-============
 
 The files in the top directory are the ones used for the knitting project that Becky Stern and Limor Fried did:
 
@@ -40,7 +36,7 @@ The subdirectories contain the following:
 
 * test-data:
 
-  A saved set of data from the PDDemulator, with dicumentation abotu what's saved in each memory location.
+  A saved set of data from the PDDemulator, with documentation about what's saved in each memory location.
   A good way to play with the file analysis tools, and may give some insight into the reverse engineering
   process.
 
@@ -48,7 +44,6 @@ The subdirectories contain the following:
 
   The beginnings of work to convert text to a knittable banner.
 
---------------------------
 
 The Brother knitting machines can save data to an external floppy disk drive, which connects to the machine using a serial cable.
 

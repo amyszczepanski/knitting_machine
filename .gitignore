@@ -12,3 +12,5 @@ test-data
 
 # python files
 *.pyc
+
+.DS_Store
