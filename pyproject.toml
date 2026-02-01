@@ -4,4 +4,20 @@ version = "0.1.0"
 description = "Tricking a Brother knitting machine into thinking that a computer is a disk drive"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "pillow>=12.1.0",
+    "pyserial>=3.5",
+]
+
+[tool.setuptools]
+packages = ["app", "experimental", "textconversion"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "black>=26.1.0",
+    "flake8>=7.3.0",
+]
