@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2009  Steve Conklin 
+# Copyright 2009  Steve Conklin
 # steve at conklinhouse dot com
 #
 # This program is free software; you can redistribute it and/or
@@ -20,39 +20,44 @@
 import sys
 import brother
 import Image
-import array
 
 TheImage = None
 
 ##################
 
+
 def roundeven(val):
-    return (val+(val%2))
+    return (val + (val % 2))
+
 
 def roundeight(val):
     if val % 8:
-        return val + (8-(val%8))
+        return val + (8 - (val % 8))
     else:
         return val
 
+
 def roundfour(val):
     if val % 4:
-        return val + (4-(val%4))
+        return val + (4 - (val % 4))
     else:
         return val
+
 
 def nibblesPerRow(stitches):
     # there are four stitches per nibble
     # each row is nibble aligned
-    return(roundfour(stitches)/4)
+    return (roundfour(stitches) / 4)
+
 
 def bytesPerPattern(stitches, rows):
     nibbs = rows * nibblesPerRow(stitches)
-    bytes = roundeven(nibbs)/2
+    bytes = roundeven(nibbs) / 2
     return bytes
 
+
 def bytesForMemo(rows):
-    bytes = roundeven(rows)/2
+    bytes = roundeven(rows) / 2
     return bytes
 
 ##############
@@ -74,7 +79,7 @@ pats = bf.getPatterns()
 # find first unused pattern bank
 patternbank = 100
 for i in range(99):
-    bytenum = i*7
+    bytenum = i * 7
     if (bf.getIndexedByte(bytenum) != 0x1):
         print(f"first unused pattern bank #{i}")
         patternbank = i
@@ -100,15 +105,15 @@ y = 0
 
 x = width - 1
 while x > 0:
-    value = TheImage.getpixel((x,y))
+    value = TheImage.getpixel((x, y))
     if value:
         sys.stdout.write('* ')
     else:
         sys.stdout.write('  ')
-    #sys.stdout.write(str(value))
-    x = x-1
-    if x == 0: #did we hit the end of the line?
-        y = y+1
+    # sys.stdout.write(str(value))
+    x = x - 1
+    if x == 0:  # did we hit the end of the line?
+        y = y + 1
         x = width - 1
         print(" ")
         if y == height:
@@ -119,19 +124,19 @@ while x > 0:
 progentry = []
 progentry.append(0x1)  # is used
 progentry.append(0x20)  # no idea what this is but dont make it 0x0
-progentry.append( (int(width / 100) << 4) | (int((width%100) / 10) & 0xF) )
-progentry.append( (int(width % 10) << 4) | (int(height / 100) & 0xF) )
-progentry.append( (int((height % 100)/10) << 4) | (int(height % 10) & 0xF) )
+progentry.append((int(width / 100) << 4) | (int((width % 100) / 10) & 0xF))
+progentry.append((int(width % 10) << 4) | (int(height / 100) & 0xF))
+progentry.append((int((height % 100) / 10) << 4) | (int(height % 10) & 0xF))
 
 # now we have to pick out a 'program name'
-patternnum = 901 # start with 901? i dunno
+patternnum = 901  # start with 901? i dunno
 for pat in pats:
     if (pat["number"] >= patternnum):
         patternnum = pat["number"] + 1
 
-#print patternnum
+# print patternnum
 progentry.append(int(patternnum / 100) & 0xF)
-progentry.append( (int((patternnum % 100)/10) << 4) | (int(patternnum % 10) & 0xF) )
+progentry.append((int((patternnum % 100) / 10) << 4) | (int(patternnum % 10) & 0xF))
 
 print(f"Program entry: {map(hex, progentry)}")
 
@@ -147,23 +152,22 @@ pattmemnibs = []
 for r in range(height):
     row = []  # we'll chunk in bits and then put em into nibbles
     for s in range(width):
-        value = TheImage.getpixel((width-s-1,height-r-1))
+        value = TheImage.getpixel((width - s - 1, height - r - 1))
         if (value != 0):
             row.append(1)
         else:
             row.append(0)
-    #print row
+    # print row
     # turn it into nibz
     for s in range(roundfour(width) / 4):
         n = 0
         for nibs in range(4):
-            #print "row size = ", len(row), "index = ",s*4+nibs
+            # print "row size = ", len(row), "index = ",s*4+nibs
 
-            if (len(row) == (s*4+nibs)):
+            if (len(row) == (s * 4 + nibs)):
                 break       # padding!
 
-            
-            if (row[s*4 + nibs]):
+            if (row[s * 4 + nibs]):
                 n |= 1 << nibs
         pattmemnibs.append(n)
         print(f"{hex(n)}")
@@ -174,18 +178,18 @@ if (len(pattmemnibs) % 2):
     # odd nibbles, buffer to a byte
     pattmemnibs.append(0x0)
 
-print (f"{len(pattmemnibs)} nibbles of data")
+print(f"{len(pattmemnibs)} nibbles of data")
 
 # turn into bytes
 pattmem = []
-for i in range (len(pattmemnibs) / 2):
-    pattmem.append( pattmemnibs[i*2] | (pattmemnibs[i*2 + 1] << 4))
+for i in range(len(pattmemnibs) / 2):
+    pattmem.append(pattmemnibs[i * 2] | (pattmemnibs[i * 2 + 1] << 4))
 
-print(f"map(hex, pattmem)")
-# whew. 
+print(f"{map(hex, pattmem)}")
+# whew.
 
 
-# now to insert this data into the file 
+# now to insert this data into the file
 
 # where to place the pattern program entry
 patternbankptr = patternbank * 7
