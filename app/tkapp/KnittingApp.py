@@ -13,7 +13,6 @@ from tkinter import filedialog
 import os
 import os.path
 from PIL import Image
-import itertools
 
 
 class KnittingApp(tkinter.Tk):
@@ -222,7 +221,7 @@ class KnittingApp(tkinter.Tk):
             self.reloadPatternFile(filePath)
 
     def patternSelected(self, evt):
-        w = evt.widget
+        # w = evt.widget
         index = self.getSelectedPatternIndex()
         if index is not None:
             pattern = self.patterns[index]
