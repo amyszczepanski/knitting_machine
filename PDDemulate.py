@@ -65,7 +65,7 @@ import sys
 import os
 import os.path
 import string
-from array import *
+import array
 import serial
 
 version = "1.0"
@@ -85,7 +85,6 @@ class DiskSector:
         self.idSz = 12
         self.data = ""
         self.id = ""
-        # self.id = array('c')
 
         dfn = fn + ".dat"
         idfn = fn + ".id"
@@ -327,15 +326,15 @@ class PDDemulator:
                 dsrdtr=0,
             )
             #            self.ser.setRTS(True)
-            if self.ser == None:
+            if self.ser is None:
                 print("Unable to open serial device %s" % cport)
                 raise IOError
         return
 
     def close(self):
         if self.noserial is not False:
-            if ser:
-                ser.close()
+            if self.ser:
+                self.ser.close()
         return
 
     def dumpchars(self):
@@ -392,7 +391,7 @@ class PDDemulator:
         return psn, lsn
 
     def readOpmodeRequest(self, req):
-        buff = array("b")
+        buff = array.array("b")
         sum = req
         reqlen = ord(self.readchar())
         buff.append(reqlen)
@@ -417,7 +416,6 @@ class PDDemulator:
             return None
 
     def handleRequests(self):
-        synced = False
         while True:
             self.handleRequest()
         # never returns
@@ -445,7 +443,7 @@ class PDDemulator:
         if req == 0x08:
             # Change to FDD emulation mode (no data returned)
             inbuf = self.readOpmodeRequest(req)
-            if inbuf != None:
+            if inbuf is not None:
                 # Change Modes, leave any incoming serial data in buffer
                 self.FDCmode = True
         else:
@@ -655,8 +653,8 @@ class PDDemulator:
             indata = self.readsomechars(1024)
             try:
                 self.disk.writeSector(psn, lsn, indata)
-                for l in self.listeners:
-                    l.dataReceived(self.disk.lastDatFilePath)
+                for listener in self.listeners:
+                    listener.dataReceived(self.disk.lastDatFilePath)
                 print("Saved data in dat file: ", self.disk.lastDatFilePath)
             except:
                 print("Failed to write data for sector %d, quitting" % psn)
