@@ -17,14 +17,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
-import sys
 import array
-
-# import os
-# import os.path
-# import string
-from array import *
-import ctypes
 
 __version__ = "1.0"
 
@@ -179,12 +172,13 @@ class brotherFile(object):
 
     def getIndexedNibble(self, offset, nibble):
         # nibbles is zero based
+        # I don't know what the variables mean but the linter hated one-letter names
         bytes = nibble / 2
-        m, l = nibbles(self.data[int(offset - bytes)])
+        mystery, labyrinth = nibbles(self.data[int(offset - bytes)])
         if nibble % 2:
-            return m
+            return mystery
         else:
-            return l
+            return labyrinth
 
     def getRowData(self, pattOffset, stitches, rownumber):
         row = array("B")
@@ -298,8 +292,8 @@ class brotherFile(object):
         patt = self.patternNumber()
         if patt > 900:
             return self.getPatternMemo(patt)
-        else:
-            rows = 0  # TODO XXXXXXXXX
+        # else:
+        #     rows = 0
         return [0]
 
     def patternNumber(self):

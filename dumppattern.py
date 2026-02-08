@@ -22,9 +22,6 @@ import brother
 
 # import convenience functions from brother module
 from brother import (
-    roundeven,
-    roundfour,
-    roundeight,
     nibblesPerRow,
     bytesPerPattern,
     bytesForMemo,
@@ -264,7 +261,7 @@ if __name__ == "__main__":
                         print("*")
                 print
 
-    except ArgumentsException as e:
+    except ArgumentsException:
         print("Usage: %s file [patternnum]" % sys.argv[0])
         print("Dumps user programs (901-999) from brother data files")
         sys.exit(1)

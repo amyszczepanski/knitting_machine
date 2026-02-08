@@ -20,15 +20,10 @@
 import sys
 import brother
 from PIL import Image
-import array
 
 # import convenience functions from brother module
 from brother import (
-    roundeven,
     roundfour,
-    roundeight,
-    nibblesPerRow,
-    bytesPerPattern,
     bytesForMemo,
     methodWithPointers,
 )
@@ -76,7 +71,7 @@ class PatternInserter:
             if int(pat["number"]) == int(pattnum):
                 # print "found it!"
                 thePattern = pat
-        if thePattern == None:
+        if thePattern is None:
             raise PatternNotFoundException(pattnum)
 
         if height != thePattern["rows"] or width != thePattern["stitches"]:
