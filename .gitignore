@@ -14,3 +14,10 @@ test-data
 *.pyc
 
 .DS_Store
+
+__pycache__/
+*.egg-info/
+.venv/
+.mypy_cache/
+dist/
+build/
