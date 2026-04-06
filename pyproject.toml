@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["app", "experimental", "textconversion"]
+packages = ["app"]
 
 [build-system]
 requires = ["setuptools>=61", "wheel"]
@@ -29,11 +29,17 @@ target-version = ['py313']
 skip-string-normalization = false
 exclude = '''
 (
-    /file-analysis/
-    | /process_image.py
-    | /splitfile2track.py
-    | /PDDemu-debug.py
-    | /addpattern.py
-    | /experimental/
+    /legacy/
+    | /scratch/
+    | /\.venv/
 )
 '''
+
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+strict = true
+exclude = [
+    "legacy/",
+    "scratch/",
+]
