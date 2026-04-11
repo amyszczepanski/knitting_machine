@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KH-930E Pattern Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Design tokens ─────────────────────────────────────────────────── */
+    :root {
+      --ink:       #1a1410;
+      --paper:     #f5f0e8;
+      --cream:     #ede7d9;
+      --thread:    #c0392b;
+      --yarn:      #e8734a;
+      --needle:    #5c8a6e;
+      --needle-lt: #8ab89a;
+      --pale:      #f9f5ee;
+      --border:    rgba(26,20,16,0.15);
+      --shadow:    0 2px 12px rgba(26,20,16,0.10);
+      --radius:    4px;
+
+      --font-head: 'Playfair Display', Georgia, serif;
+      --font-mono: 'DM Mono', 'Courier New', monospace;
+    }
+
+    /* ── Reset ─────────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 15px; }
+    body {
+      font-family: var(--font-mono);
+      background: var(--paper);
+      color: var(--ink);
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    /* ── Header ────────────────────────────────────────────────────────── */
+    header {
+      border-bottom: 2px solid var(--ink);
+      padding: 1.2rem 2rem;
+      display: flex;
+      align-items: baseline;
+      gap: 1.5rem;
+      background: var(--ink);
+      color: var(--paper);
+    }
+    header h1 {
+      font-family: var(--font-head);
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    header span.model {
+      font-size: 0.75rem;
+      opacity: 0.55;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #555;
+      margin-left: auto;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .status-dot.ok   { background: var(--needle-lt); box-shadow: 0 0 6px var(--needle-lt); }
+    .status-dot.busy { background: var(--yarn);      box-shadow: 0 0 6px var(--yarn); }
+    .status-dot.err  { background: var(--thread);    box-shadow: 0 0 6px var(--thread); }
+
+    /* ── Main grid ─────────────────────────────────────────────────────── */
+    main {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 0;
+      max-width: 1200px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 2rem;
+      gap: 2rem;
+      align-items: start;
+    }
+
+    /* ── Panel ─────────────────────────────────────────────────────────── */
+    .panel {
+      background: var(--pale);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .panel-head {
+      padding: 0.7rem 1.1rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.7rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      background: var(--cream);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .panel-body { padding: 1.2rem; }
+
+    /* ── Upload zone ───────────────────────────────────────────────────── */
+    #drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      background: var(--paper);
+      position: relative;
+    }
+    #drop-zone.drag-over {
+      border-color: var(--needle);
+      background: #eef4f0;
+    }
+    #drop-zone input[type="file"] {
+      position: absolute; inset: 0;
+      opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    #drop-zone .drop-icon {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+    #drop-zone p {
+      font-size: 0.82rem;
+      opacity: 0.6;
+    }
+
+    /* ── Preview canvas ─────────────────────────────────────────────────── */
+    #preview-wrap {
+      margin-top: 1rem;
+      min-height: 120px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--paper);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      position: relative;
+    }
+    #preview-wrap img {
+      max-width: 100%;
+      image-rendering: pixelated;
+      display: block;
+    }
+    #preview-wrap .preview-empty {
+      font-size: 0.78rem;
+      opacity: 0.4;
+      padding: 2rem;
+    }
+    #preview-meta {
+      margin-top: 0.5rem;
+      font-size: 0.75rem;
+      opacity: 0.55;
+      display: flex;
+      gap: 1.5rem;
+    }
+
+    /* ── Controls row ───────────────────────────────────────────────────── */
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.8rem;
+      margin-top: 1rem;
+    }
+    .field label {
+      display: block;
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      opacity: 0.6;
+      margin-bottom: 0.3rem;
+    }
+    .field input[type="number"],
+    .field input[type="range"] {
+      width: 100%;
+      padding: 0.4rem 0.6rem;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--paper);
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
+      color: var(--ink);
+    }
+    .field input[type="range"] { padding: 0; border: none; accent-color: var(--needle); }
+    .field .range-val { font-size: 0.8rem; opacity: 0.7; float: right; }
+
+    /* ── Buttons ────────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4em;
+      padding: 0.6rem 1.1rem;
+      border: 1.5px solid var(--ink);
+      border-radius: var(--radius);
+      background: transparent;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    .btn:hover   { background: var(--ink); color: var(--paper); }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn.primary { background: var(--ink); color: var(--paper); }
+    .btn.primary:hover { background: #3a3028; }
+    .btn.danger  { border-color: var(--thread); color: var(--thread); }
+    .btn.danger:hover  { background: var(--thread); color: #fff; }
+    .btn.go      { border-color: var(--needle); color: var(--needle); }
+    .btn.go:hover     { background: var(--needle); color: #fff; }
+
+    .action-row {
+      display: flex;
+      gap: 0.7rem;
+      margin-top: 1rem;
+      flex-wrap: wrap;
+    }
+
+    /* ── Pattern list ───────────────────────────────────────────────────── */
+    #pattern-list {
+      list-style: none;
+    }
+    #pattern-list li {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      padding: 0.6rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.82rem;
+    }
+    #pattern-list li:last-child { border-bottom: none; }
+    .pattern-num {
+      font-family: var(--font-head);
+      font-style: italic;
+      font-size: 1.1rem;
+      color: var(--thread);
+      min-width: 2.5rem;
+    }
+    .pattern-dims { opacity: 0.55; font-size: 0.75rem; margin-left: auto; }
+    .list-empty { font-size: 0.82rem; opacity: 0.45; padding: 1rem 0; text-align: center; }
+
+    /* ── Send panel ─────────────────────────────────────────────────────── */
+    #send-status {
+      padding: 0.7rem 1rem;
+      border-radius: var(--radius);
+      font-size: 0.8rem;
+      margin-top: 0.9rem;
+      display: none;
+      border: 1px solid var(--border);
+    }
+    #send-status.pending { background: #fdf6e3; color: #9a7d0a; }
+    #send-status.running { background: #eef4f0; color: var(--needle); }
+    #send-status.done    { background: #eef4f0; color: var(--needle); }
+    #send-status.error   { background: #fde8e6; color: var(--thread); }
+
+    /* ── Config mini-panel ──────────────────────────────────────────────── */
+    .config-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.7rem;
+    }
+    .config-grid .field input[type="text"] {
+      width: 100%;
+      padding: 0.4rem 0.6rem;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--paper);
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+    }
+
+    /* ── Spinner ────────────────────────────────────────────────────────── */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 0.7rem 2rem;
+      font-size: 0.72rem;
+      opacity: 0.4;
+      text-align: center;
+      letter-spacing: 0.08em;
+    }
+
+    /* ── Toast ──────────────────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 1.5rem; left: 50%;
+      transform: translateX(-50%) translateY(2rem);
+      background: var(--ink);
+      color: var(--paper);
+      padding: 0.6rem 1.2rem;
+      border-radius: var(--radius);
+      font-size: 0.82rem;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s, transform 0.2s;
+      z-index: 999;
+      white-space: nowrap;
+    }
+    #toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>KH-930E</h1>
+  <span class="model">Pattern Studio</span>
+  <div id="status-dot" class="status-dot" title="API status"></div>
+</header>
+
+<main>
+  <!-- ── Left column: upload + preview ─────────────────────────────── -->
+  <div>
+
+    <div class="panel">
+      <div class="panel-head">▦ Image</div>
+      <div class="panel-body">
+
+        <div id="drop-zone">
+          <input type="file" id="file-input" accept="image/*" />
+          <span class="drop-icon">⌗</span>
+          <p>Drop an image here or click to browse</p>
+        </div>
+
+        <div class="controls">
+          <div class="field">
+            <label>Pattern # (901–999)</label>
+            <input type="number" id="pattern-num" value="901" min="901" max="999" />
+          </div>
+          <div class="field">
+            <label>Threshold <span class="range-val" id="thresh-val">128</span></label>
+            <input type="range" id="threshold" min="0" max="255" value="128" />
+          </div>
+        </div>
+
+        <div id="preview-wrap">
+          <span class="preview-empty">Preview will appear here</span>
+        </div>
+        <div id="preview-meta"></div>
+
+        <div class="action-row">
+          <button class="btn primary" id="btn-write" disabled>Write Pattern</button>
+          <button class="btn" id="btn-preview" disabled>Refresh Preview</button>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Right column: patterns + send ─────────────────────────────── -->
+  <div style="display:flex;flex-direction:column;gap:1.5rem;">
+
+    <div class="panel">
+      <div class="panel-head" style="justify-content:space-between;">
+        <span>◈ Patterns on Disk</span>
+        <button class="btn" id="btn-refresh-list" style="padding:0.2rem 0.6rem;font-size:0.7rem;">Refresh</button>
+      </div>
+      <div class="panel-body" style="padding: 0.5rem 1.2rem;">
+        <ul id="pattern-list"><li class="list-empty">Loading…</li></ul>
+      </div>
+      <div style="padding:0.5rem 1.2rem 1rem;border-top:1px solid var(--border);">
+        <button class="btn danger" id="btn-reset-disk" style="font-size:0.75rem;">Reset Disk</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">⟶ Send to Machine</div>
+      <div class="panel-body">
+        <p style="font-size:0.8rem;opacity:0.6;margin-bottom:0.9rem;line-height:1.5;">
+          Starts the PDD emulator over serial.  Connect the machine,
+          then initiate a disk-read from the KH-930E.
+        </p>
+        <button class="btn go" id="btn-send" style="width:100%;">Send Disk Image</button>
+        <div id="send-status"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">⚙ Serial Config</div>
+      <div class="panel-body">
+        <div class="config-grid">
+          <div class="field">
+            <label>Port</label>
+            <input type="text" id="cfg-port" value="/dev/ttyUSB0" />
+          </div>
+          <div class="field">
+            <label>Baud</label>
+            <input type="text" id="cfg-baud" value="19200" />
+          </div>
+        </div>
+        <div class="action-row">
+          <button class="btn" id="btn-save-cfg" style="font-size:0.78rem;">Save Config</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer>Brother KH-930E Pattern Studio · MVP</footer>
+<div id="toast"></div>
+
+<script>
+/* ── Config ──────────────────────────────────────────────────────────── */
+const API = (window.KM_API_BASE || 'http://localhost:8000');
+
+/* ── State ───────────────────────────────────────────────────────────── */
+let currentFile = null;
+let sendPollInterval = null;
+
+/* ── Helpers ─────────────────────────────────────────────────────────── */
+function toast(msg, ms = 2800) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), ms);
+}
+
+function setDot(state) {  // 'ok' | 'busy' | 'err' | ''
+  const d = document.getElementById('status-dot');
+  d.className = 'status-dot' + (state ? ' ' + state : '');
+}
+
+async function apiFetch(path, opts = {}) {
+  const resp = await fetch(API + path, opts);
+  if (!resp.ok) {
+    let detail = resp.statusText;
+    try { const j = await resp.json(); detail = j.detail || detail; } catch {}
+    throw new Error(detail);
+  }
+  return resp.json();
+}
+
+/* ── Load config from API ─────────────────────────────────────────────── */
+async function loadConfig() {
+  try {
+    const cfg = await apiFetch('/config');
+    document.getElementById('cfg-port').value = cfg.serial_port;
+    document.getElementById('cfg-baud').value = cfg.baud_rate;
+    setDot('ok');
+  } catch {
+    setDot('err');
+  }
+}
+
+/* ── Pattern list ────────────────────────────────────────────────────── */
+async function refreshPatternList() {
+  const ul = document.getElementById('pattern-list');
+  ul.innerHTML = '<li class="list-empty">Loading…</li>';
+  try {
+    const data = await apiFetch('/patterns');
+    if (!data.patterns.length) {
+      ul.innerHTML = '<li class="list-empty">No patterns on disk</li>';
+      return;
+    }
+    ul.innerHTML = data.patterns.map(p => `
+      <li>
+        <span class="pattern-num">${p.number}</span>
+        <span>${p.stitches} st × ${p.rows} rows</span>
+        <span class="pattern-dims">${p.stitches}w × ${p.rows}h</span>
+      </li>`).join('');
+  } catch (e) {
+    ul.innerHTML = '<li class="list-empty" style="color:var(--thread)">Could not load patterns</li>';
+  }
+}
+
+/* ── File selection ──────────────────────────────────────────────────── */
+function onFileSelected(file) {
+  if (!file) return;
+  currentFile = file;
+  document.getElementById('btn-write').disabled = false;
+  document.getElementById('btn-preview').disabled = false;
+  requestPreview();
+}
+
+document.getElementById('file-input').addEventListener('change', e => {
+  onFileSelected(e.target.files[0] || null);
+});
+
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) { onFileSelected(file); }
+});
+
+/* ── Threshold slider ────────────────────────────────────────────────── */
+const slider = document.getElementById('threshold');
+slider.addEventListener('input', () => {
+  document.getElementById('thresh-val').textContent = slider.value;
+});
+slider.addEventListener('change', () => { if (currentFile) requestPreview(); });
+
+/* ── Preview ─────────────────────────────────────────────────────────── */
+async function requestPreview() {
+  if (!currentFile) return;
+  const wrap = document.getElementById('preview-wrap');
+  wrap.innerHTML = '<span class="preview-empty"><span class="spinner"></span></span>';
+
+  const fd = new FormData();
+  fd.append('file', currentFile);
+  fd.append('threshold', slider.value);
+
+  try {
+    const data = await apiFetch('/preview', { method: 'POST', body: fd });
+    wrap.innerHTML = `<img src="${data.data_uri}" alt="pattern preview" />`;
+    document.getElementById('preview-meta').textContent =
+      `${data.width} stitches × ${data.height} rows`;
+  } catch (e) {
+    wrap.innerHTML = `<span class="preview-empty" style="color:var(--thread)">${e.message}</span>`;
+    document.getElementById('preview-meta').textContent = '';
+  }
+}
+
+document.getElementById('btn-preview').addEventListener('click', requestPreview);
+
+/* ── Write pattern ───────────────────────────────────────────────────── */
+document.getElementById('btn-write').addEventListener('click', async () => {
+  if (!currentFile) return;
+  const btn = document.getElementById('btn-write');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Writing…';
+
+  const fd = new FormData();
+  fd.append('file', currentFile);
+  fd.append('number', document.getElementById('pattern-num').value);
+  fd.append('threshold', slider.value);
+
+  try {
+    const data = await apiFetch('/pattern', { method: 'POST', body: fd });
+    toast(`Pattern ${data.number} written — ${data.width}×${data.height}`);
+    await refreshPatternList();
+  } catch (e) {
+    toast(`Error: ${e.message}`, 4000);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Write Pattern';
+  }
+});
+
+/* ── Reset disk ──────────────────────────────────────────────────────── */
+document.getElementById('btn-reset-disk').addEventListener('click', async () => {
+  if (!confirm('Wipe the in-memory disk image? This cannot be undone.')) return;
+  try {
+    await apiFetch('/disk', { method: 'DELETE' });
+    toast('Disk reset to blank');
+    await refreshPatternList();
+  } catch (e) {
+    toast(`Error: ${e.message}`, 4000);
+  }
+});
+
+/* ── Send ────────────────────────────────────────────────────────────── */
+document.getElementById('btn-send').addEventListener('click', async () => {
+  const btn  = document.getElementById('btn-send');
+  const stat = document.getElementById('send-status');
+
+  if (sendPollInterval) clearInterval(sendPollInterval);
+
+  btn.disabled = true;
+  stat.style.display = 'block';
+  stat.className = 'pending';
+  stat.textContent = 'Starting emulator…';
+  setDot('busy');
+
+  try {
+    const data = await apiFetch('/send', { method: 'POST' });
+    const taskId = data.task_id;
+
+    sendPollInterval = setInterval(async () => {
+      try {
+        const t = await apiFetch(`/send/${taskId}`);
+        stat.className = t.status;
+        if (t.status === 'running') {
+          stat.innerHTML = '<span class="spinner"></span> Emulator running — initiate read on machine…';
+        } else if (t.status === 'done') {
+          stat.textContent = '✓ Transfer complete';
+          setDot('ok');
+          btn.disabled = false;
+          clearInterval(sendPollInterval);
+        } else if (t.status === 'error') {
+          stat.textContent = `Error: ${t.error}`;
+          setDot('err');
+          btn.disabled = false;
+          clearInterval(sendPollInterval);
+        }
+      } catch {}
+    }, 1200);
+
+  } catch (e) {
+    stat.className = 'error';
+    stat.textContent = `Failed to start: ${e.message}`;
+    setDot('err');
+    btn.disabled = false;
+  }
+});
+
+/* ── Config save ─────────────────────────────────────────────────────── */
+document.getElementById('btn-save-cfg').addEventListener('click', async () => {
+  const body = JSON.stringify({
+    serial_port: document.getElementById('cfg-port').value,
+    baud_rate:   parseInt(document.getElementById('cfg-baud').value, 10),
+  });
+  try {
+    await apiFetch('/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+    toast('Config saved');
+  } catch (e) {
+    toast(`Error: ${e.message}`, 4000);
+  }
+});
+
+document.getElementById('btn-refresh-list').addEventListener('click', refreshPatternList);
+
+/* ── Init ────────────────────────────────────────────────────────────── */
+loadConfig();
+refreshPatternList();
+</script>
+</body>
+</html>
