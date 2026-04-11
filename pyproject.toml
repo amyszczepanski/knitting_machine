@@ -7,6 +7,9 @@ requires-python = ">=3.13"
 dependencies = [
     "pillow>=12.1.0",
     "pyserial>=3.5",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
 ]
 
 [tool.setuptools]
@@ -21,34 +24,9 @@ dev = [
     "black>=26.1.0",
     "flake8>=7.3.0",
     "mypy>=1.19.1",
-    "types-Pillow",
-]
-
-dependencies = [
-  "pillow>=12.1.0",
-  "pyserial>=3.5",
-  "fastapi>=0.115",
-  "uvicorn[standard]>=0.30",
-  "python-multipart>=0.0.9",
 ]
 
 [tool.black]
 line-length = 88
 target-version = ['py313']
 skip-string-normalization = false
-exclude = '''
-(
-    /legacy/
-    | /scratch/
-    | /\.venv/
-)
-'''
-
-[tool.mypy]
-python_version = "3.13"
-ignore_missing_imports = true
-strict = true
-exclude = [
-    "legacy/",
-    "scratch/",
-]
