@@ -249,7 +249,8 @@ def write_pattern(
             ),
             gt=0,
         ),
-    ] = 4 / 3,
+    ] = 4
+    / 3,
 ) -> WritePatternResponse:
     """Upload an image and write it as a knitting pattern.
 
@@ -260,7 +261,9 @@ def write_pattern(
     """
     raw = _bytes_from_upload(file)
     try:
-        result = load_image(raw, threshold=threshold, stitch_aspect_ratio=stitch_aspect_ratio)
+        result = load_image(
+            raw, threshold=threshold, stitch_aspect_ratio=stitch_aspect_ratio
+        )
     except ImageError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -290,7 +293,9 @@ def preview_image(
     """Return a scaled/binarised preview PNG without writing to disk."""
     raw = _bytes_from_upload(file)
     try:
-        result = load_image(raw, threshold=threshold, stitch_aspect_ratio=stitch_aspect_ratio)
+        result = load_image(
+            raw, threshold=threshold, stitch_aspect_ratio=stitch_aspect_ratio
+        )
     except ImageError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
