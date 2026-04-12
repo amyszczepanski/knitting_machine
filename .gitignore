@@ -1,13 +1,5 @@
-# specific to knitting machine source
-img.start
-docs
-test-data
-
-# binary files
-*.bmp
-*.xcf
-*.png
-*.dat
+# data files
+img/*
 
 # python files
 *.pyc
