@@ -1,63 +1,50 @@
-Please see the Changelog file for the latest changes
+# Brother KH-930/940 Knitting Machine Disk Emulator
 
-# Quick start
+> **Work in progress** — this project is under active development and is not yet production-ready. Use with caution.
 
-Execute script guimain.py to start graphical application.
-This application can start floppy disk emulator and provides means to download/upload patterns and modify them.
-It is based on existing python scripts, which were slightly modified for better user experience in graphical application.
+This project allows a computer to emulate the external floppy disk drive used by Brother KH-930E knitting machines (and similar models), communicating over a serial cable. Since these drives are rare, expensive, and use a physical disk format incompatible with standard PC drives, software emulation is a practical alternative.
 
-# Notes
+The emulator presents itself to the knitting machine as a floppy drive, enabling saving and restoring of pattern data. Most of the saved data file format has been reverse-engineered, and the tools used in that process are also included here.
 
-These files are related to the Brother KH-930E knitting machine, and other similar models.
+## Status
 
-The emulator script was named PDDemulate-1.0.py, and the instructions in a lor of forums for using it have that name.
-The script has been renamed, and is now simply PDDemulate.py.
+This is a work in progress. The core emulation and pattern format handling are functional, but the project is not yet production-ready.
 
-The files in the top directory are the ones used for the knitting project that Becky Stern and Limor Fried did:
+## Background and Credits
 
-http://blog.makezine.com/archive/2010/11/how-to_hacking_the_brother_kh-930e.html
-http://blog.craftzine.com/archive/2010/11/hack_your_knitting_machine.html
+This work builds on a lineage of open-source contributions:
 
-The subdirectories contain the following:
+- Original reverse-engineering and emulator work by **John R. Hogerhuis**
+- Extended by **Steve Conklin**
+- Further extended by **Becky Stern**, **Limor Fried**, **Travis Goodspeed**, and others
 
-* docs:
+Relevant prior work and write-ups:
+- http://blog.makezine.com/archive/2010/11/how-to_hacking_the_brother_kh-930e.html
+- http://blog.craftzine.com/archive/2010/11/hack_your_knitting_machine.html
+- http://travisgoodspeed.blogspot.com/2010/12/hacking-knitting-machines-keypad.html
 
-  Documentation for the project, including the data file format information and
-  scans of old manuals which are hard to find.
+This modernized version — including migration to a `uv`-managed Python package, type annotations, a FastAPI-based interface, and general code cleanup — was developed with the assistance of AI tools.
 
-* experimental:
+## Quick Start
 
-  Some never-tested code to talk to a Tandy PDD-1 or Brother disk drive.
+```bash
+uv run uvicorn app.api:app --reload
+```
 
-* file-analysis:
+The application exposes a web API for uploading and downloading knitting patterns and interacting with the disk emulator.
 
-  Various scripts used to reverse-engineer the brother data format, as well as some spreadsheets used.
-  These may or may nor work, but may be useful for some.
+## Repository Structure
 
-* test-data:
+- `app/` — main application package (emulator, format handling, API, image conversion)
+- `docs/` — documentation
 
-  A saved set of data from the PDDemulator, with documentation about what's saved in each memory location.
-  A good way to play with the file analysis tools, and may give some insight into the reverse engineering
-  process.
+## Development
 
-* textconversion
+Install dependencies and run the type checker and linter:
 
-  The beginnings of work to convert text to a knittable banner.
-
-
-The Brother knitting machines can save data to an external floppy disk drive, which connects to the machine using a serial cable.
-
-These external floppy drives are difficult to find and expensive, and the physical format of the floppy disks is different than 3.25" PC drives.
-
-The program PDDemulate acts like a floppy drive, and runs on linux machines, allowing you to save and restore data from the knitting machine.
-
-Most of the formatting of the saved data files has been figured out, and the tools used to do that are also in this repository.
-
-There is also an example of how to generate a text banner in a .png image file, 
-which may be useful to some.
-
-The work that Steve Conklin did was based on earlier work by John R. Hogerhuis.
-
-This extended by Becky and Limor and others, including Travis Goodspeed:
-
-http://travisgoodspeed.blogspot.com/2010/12/hacking-knitting-machines-keypad.html
+```bash
+uv sync --dev
+uv run mypy app/
+uv run flake8 app/
+uv run black --check app/
+```
