@@ -35,13 +35,12 @@ import base64
 import io
 import threading
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
@@ -183,8 +182,6 @@ def _render_preview_png(pixel_rows: list[list[int]]) -> bytes:
 
 def _run_send(task_id: str, disk_image_bytes: bytes) -> None:
     """Background thread: load disk image into the emulator and serve it."""
-    from pathlib import Path
-
     task = _state.tasks[task_id]
     task.status = _TaskStatus.RUNNING
     try:

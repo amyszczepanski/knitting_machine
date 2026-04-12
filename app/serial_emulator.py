@@ -66,7 +66,6 @@ machine completes a write cycle:
 from __future__ import annotations
 
 import logging
-import os
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
