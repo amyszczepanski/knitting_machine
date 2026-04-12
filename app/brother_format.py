@@ -104,7 +104,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Sequence
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -136,6 +135,7 @@ SELECT_ADDR: int = 0x07EA
 # ---------------------------------------------------------------------------
 # Low-level geometry helpers
 # ---------------------------------------------------------------------------
+
 
 def _ceil4(n: int) -> int:
     """Round n up to the nearest multiple of 4."""
@@ -180,6 +180,7 @@ def bytes_per_pattern_and_memo(stitches: int, rows: int) -> int:
 # BCD helpers
 # ---------------------------------------------------------------------------
 
+
 def _bcd_encode_3digit(value: int) -> tuple[int, int, int]:
     """
     Encode a 3-digit decimal value as (hundreds, tens, ones) nibbles.
@@ -202,6 +203,7 @@ def _bcd_decode_3digit(hundreds: int, tens: int, ones: int) -> int:
 # Nibble-level read/write (backward addressing)
 # ---------------------------------------------------------------------------
 
+
 def _read_nibble(data: bytearray, base: int, nibble_index: int) -> int:
     """
     Read a single nibble from `data`.
@@ -218,9 +220,9 @@ def _read_nibble(data: bytearray, base: int, nibble_index: int) -> int:
     byte_offset = base - (nibble_index // 2)
     byte_val = data[byte_offset]
     if nibble_index % 2 == 0:
-        return byte_val & 0x0F          # LSN
+        return byte_val & 0x0F  # LSN
     else:
-        return (byte_val & 0xF0) >> 4   # MSN
+        return (byte_val & 0xF0) >> 4  # MSN
 
 
 def _write_nibble(data: bytearray, base: int, nibble_index: int, value: int) -> None:
@@ -244,6 +246,7 @@ def _write_nibble(data: bytearray, base: int, nibble_index: int, value: int) -> 
 # Row encode / decode
 # ---------------------------------------------------------------------------
 
+
 def encode_row(pixels: Sequence[int], stitches: int) -> list[int]:
     """
     Encode a row of pixel values into a list of nibbles.
@@ -256,19 +259,17 @@ def encode_row(pixels: Sequence[int], stitches: int) -> list[int]:
     Padding stitches (if stitches is not a multiple of 4) are filled with 0.
     """
     if len(pixels) != stitches:
-        raise ValueError(
-            f"Expected {stitches} pixels for this row, got {len(pixels)}"
-        )
+        raise ValueError(f"Expected {stitches} pixels for this row, got {len(pixels)}")
     npr = nibbles_per_row(stitches)
     nibble_list: list[int] = []
     padded = list(pixels) + [0] * (_ceil4(stitches) - stitches)
     for n in range(npr):
         s = n * 4
         nibble = (
-            (padded[s]     & 1)
-            | ((padded[s+1] & 1) << 1)
-            | ((padded[s+2] & 1) << 2)
-            | ((padded[s+3] & 1) << 3)
+            (padded[s] & 1)
+            | ((padded[s + 1] & 1) << 1)
+            | ((padded[s + 2] & 1) << 2)
+            | ((padded[s + 3] & 1) << 3)
         )
         nibble_list.append(nibble)
     return nibble_list
@@ -301,6 +302,7 @@ def decode_row(nibble_list: Sequence[int], stitches: int) -> list[int]:
 # Pattern data encode / decode (full pattern ↔ bytes in the working region)
 # ---------------------------------------------------------------------------
 
+
 def encode_pattern_data(
     pixel_rows: Sequence[Sequence[int]],
     stitches: int,
@@ -319,9 +321,7 @@ def encode_pattern_data(
     (pattern_offset) in the working region and grows toward lower addresses.
     """
     if len(pixel_rows) != rows:
-        raise ValueError(
-            f"Expected {rows} rows, got {len(pixel_rows)}"
-        )
+        raise ValueError(f"Expected {rows} rows, got {len(pixel_rows)}")
     npr = nibbles_per_row(stitches)
     total_nibbles = rows * npr
     total_bytes = _ceil2(total_nibbles) // 2
@@ -373,6 +373,7 @@ def decode_pattern_data(
 # Memo encode / decode
 # ---------------------------------------------------------------------------
 
+
 def encode_memo(rows: int, memo_values: Sequence[int] | None = None) -> bytearray:
     """
     Encode a memo block for `rows` rows.
@@ -412,14 +413,15 @@ def decode_memo(
 # Directory entry encode / decode
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class PatternEntry:
     """Metadata for one pattern stored in the Brother directory."""
 
-    number: int       # 901–999
-    stitches: int     # 1–200
-    rows: int         # 1–999
-    flag: int         # high byte of reversed-address pointer
+    number: int  # 901–999
+    stitches: int  # 1–200
+    rows: int  # 1–999
+    flag: int  # high byte of reversed-address pointer
     pointer_low: int  # low byte of reversed-address pointer
 
     @property
@@ -481,15 +483,17 @@ def encode_directory_entry(
     sh, st, so = _bcd_encode_3digit(stitches)
     ph, pt, po = _bcd_encode_3digit(number)
 
-    entry = bytes([
-        flag,
-        ptr_low,
-        (rh << 4) | rt,
-        (ro << 4) | sh,
-        (st << 4) | so,
-        (0x0 << 4) | ph,   # upper nibble unused
-        (pt << 4) | po,
-    ])
+    entry = bytes(
+        [
+            flag,
+            ptr_low,
+            (rh << 4) | rt,
+            (ro << 4) | sh,
+            (st << 4) | so,
+            (0x0 << 4) | ph,  # upper nibble unused
+            (pt << 4) | po,
+        ]
+    )
 
     byte_offset = slot_index * DIRECTORY_ENTRY_SIZE
     return byte_offset, entry
@@ -502,12 +506,11 @@ def decode_directory_entry(raw: bytes | bytearray) -> PatternEntry | None:
     """
     if len(raw) < DIRECTORY_ENTRY_SIZE:
         raise ValueError(
-            f"Directory entry must be {DIRECTORY_ENTRY_SIZE} bytes, "
-            f"got {len(raw)}"
+            f"Directory entry must be {DIRECTORY_ENTRY_SIZE} bytes, " f"got {len(raw)}"
         )
     flag = raw[0]
     if flag == 0:
-        return None   # empty slot
+        return None  # empty slot
 
     ptr_low = raw[1]
     rh = (raw[2] & 0xF0) >> 4
@@ -516,7 +519,7 @@ def decode_directory_entry(raw: bytes | bytearray) -> PatternEntry | None:
     sh = raw[3] & 0x0F
     st = (raw[4] & 0xF0) >> 4
     so = raw[4] & 0x0F
-    ph = raw[5] & 0x0F   # upper nibble ignored
+    ph = raw[5] & 0x0F  # upper nibble ignored
     pt = (raw[6] & 0xF0) >> 4
     po = raw[6] & 0x0F
 
@@ -536,6 +539,7 @@ def decode_directory_entry(raw: bytes | bytearray) -> PatternEntry | None:
 # ---------------------------------------------------------------------------
 # DiskImage — the top-level object
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class DiskImage:
@@ -601,7 +605,9 @@ class DiskImage:
         correctly.
         """
         for slot in range(MAX_PATTERNS):
-            raw = self._data[slot * DIRECTORY_ENTRY_SIZE:(slot + 1) * DIRECTORY_ENTRY_SIZE]
+            raw = self._data[
+                slot * DIRECTORY_ENTRY_SIZE : (slot + 1) * DIRECTORY_ENTRY_SIZE
+            ]
             entry = decode_directory_entry(raw)
             if entry is None:
                 self._next_slot = slot
@@ -621,7 +627,9 @@ class DiskImage:
         """Return a list of all valid PatternEntry objects in the directory."""
         entries: list[PatternEntry] = []
         for slot in range(MAX_PATTERNS):
-            raw = self._data[slot * DIRECTORY_ENTRY_SIZE:(slot + 1) * DIRECTORY_ENTRY_SIZE]
+            raw = self._data[
+                slot * DIRECTORY_ENTRY_SIZE : (slot + 1) * DIRECTORY_ENTRY_SIZE
+            ]
             entry = decode_directory_entry(raw)
             if entry is None:
                 break
@@ -725,11 +733,11 @@ class DiskImage:
         # --- Write into working region ---
         # memo block: last byte of memo_bytes sits at memo_offset.
         memo_start = memo_offset - len(memo_bytes) + 1
-        self._data[memo_start:memo_offset + 1] = memo_bytes
+        self._data[memo_start : memo_offset + 1] = memo_bytes
 
         # pattern data: last byte sits at pattern_offset.
         pat_start = pattern_offset - len(pat_bytes) + 1
-        self._data[pat_start:pattern_offset + 1] = pat_bytes
+        self._data[pat_start : pattern_offset + 1] = pat_bytes
 
         # --- Write directory entry ---
         dir_offset, dir_bytes = encode_directory_entry(
@@ -740,7 +748,7 @@ class DiskImage:
             memo_offset=memo_offset,
             data_length=WORKING_REGION_SIZE,
         )
-        self._data[dir_offset:dir_offset + DIRECTORY_ENTRY_SIZE] = dir_bytes
+        self._data[dir_offset : dir_offset + DIRECTORY_ENTRY_SIZE] = dir_bytes
 
         # --- Advance cursors ---
         self._next_pattern_ptr -= total
@@ -748,7 +756,7 @@ class DiskImage:
 
         # Decode the entry we just wrote and return it for confirmation.
         return decode_directory_entry(
-            self._data[dir_offset:dir_offset + DIRECTORY_ENTRY_SIZE]
+            self._data[dir_offset : dir_offset + DIRECTORY_ENTRY_SIZE]
         )  # type: ignore[return-value]
 
     # ---------------------------------------------------------------------------

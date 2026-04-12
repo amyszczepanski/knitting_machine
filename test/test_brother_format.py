@@ -14,7 +14,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent))
 import brother_format as bf
 
-
 # ---------------------------------------------------------------------------
 # Geometry helpers
 # ---------------------------------------------------------------------------
@@ -47,7 +46,7 @@ class TestGeometry:
     def test_bytes_for_memo(self):
         assert bf.bytes_for_memo(150) == 75
         assert bf.bytes_for_memo(1) == 1
-        assert bf.bytes_for_memo(3) == 2   # rounds up to even
+        assert bf.bytes_for_memo(3) == 2  # rounds up to even
 
 
 # ---------------------------------------------------------------------------
@@ -84,10 +83,10 @@ class TestNibbleIO:
     def test_write_and_read_lsn_msn(self):
         buf = bytearray(4)
         base = 3
-        bf._write_nibble(buf, base, 0, 0xA)   # nibble 0 → LSN of buf[3]
-        bf._write_nibble(buf, base, 1, 0xB)   # nibble 1 → MSN of buf[3]
-        bf._write_nibble(buf, base, 2, 0xC)   # nibble 2 → LSN of buf[2]
-        bf._write_nibble(buf, base, 3, 0xD)   # nibble 3 → MSN of buf[2]
+        bf._write_nibble(buf, base, 0, 0xA)  # nibble 0 → LSN of buf[3]
+        bf._write_nibble(buf, base, 1, 0xB)  # nibble 1 → MSN of buf[3]
+        bf._write_nibble(buf, base, 2, 0xC)  # nibble 2 → LSN of buf[2]
+        bf._write_nibble(buf, base, 3, 0xD)  # nibble 3 → MSN of buf[2]
         assert buf[3] == 0xBA
         assert buf[2] == 0xDC
         assert bf._read_nibble(buf, base, 0) == 0xA
@@ -98,8 +97,8 @@ class TestNibbleIO:
     def test_write_preserves_other_nibble(self):
         buf = bytearray(1)
         base = 0
-        bf._write_nibble(buf, base, 0, 0x5)   # write LSN
-        bf._write_nibble(buf, base, 1, 0x3)   # write MSN — LSN must be preserved
+        bf._write_nibble(buf, base, 0, 0x5)  # write LSN
+        bf._write_nibble(buf, base, 1, 0x3)  # write MSN — LSN must be preserved
         assert buf[0] == 0x35
         assert bf._read_nibble(buf, base, 0) == 0x5
         assert bf._read_nibble(buf, base, 1) == 0x3
@@ -157,7 +156,7 @@ class TestRowCodec:
 
     def test_wrong_length_raises(self):
         with pytest.raises(ValueError):
-            bf.encode_row([1, 0], 4)   # 2 pixels, expects 4
+            bf.encode_row([1, 0], 4)  # 2 pixels, expects 4
 
     def test_lsb_is_leftmost_stitch(self):
         # Only stitch 0 (leftmost) is set → bit 0 of nibble should be 1
@@ -192,7 +191,7 @@ class TestPatternCodec:
         buf = bytearray(bf.WORKING_REGION_SIZE)
         offset = bf.INIT_PATTERN_OFFSET
         start = offset - len(encoded) + 1
-        buf[start:offset + 1] = encoded
+        buf[start : offset + 1] = encoded
 
         decoded = bf.decode_pattern_data(buf, offset, 4, 3)
         assert decoded == pixel_rows
@@ -200,13 +199,15 @@ class TestPatternCodec:
     def test_roundtrip_random(self):
         random.seed(42)
         stitches, rows = 7, 5
-        pixel_rows = [[random.randint(0, 1) for _ in range(stitches)] for _ in range(rows)]
+        pixel_rows = [
+            [random.randint(0, 1) for _ in range(stitches)] for _ in range(rows)
+        ]
         encoded = bf.encode_pattern_data(pixel_rows, stitches, rows)
         assert len(encoded) == bf.bytes_per_pattern(stitches, rows)
 
         buf = bytearray(bf.WORKING_REGION_SIZE)
         offset = bf.INIT_PATTERN_OFFSET
-        buf[offset - len(encoded) + 1:offset + 1] = encoded
+        buf[offset - len(encoded) + 1 : offset + 1] = encoded
         assert bf.decode_pattern_data(buf, offset, stitches, rows) == pixel_rows
 
     def test_encoded_length_matches_geometry(self):
@@ -267,8 +268,12 @@ class TestDirectoryEntry:
         assert entry.memo_offset == memo_offset
 
     def test_slot_index_sets_byte_offset(self):
-        _, raw0 = bf.encode_directory_entry(0, 901, 4, 3, 0x06DF, bf.WORKING_REGION_SIZE)
-        off1, raw1 = bf.encode_directory_entry(1, 902, 4, 3, 0x06D0, bf.WORKING_REGION_SIZE)
+        _, raw0 = bf.encode_directory_entry(
+            0, 901, 4, 3, 0x06DF, bf.WORKING_REGION_SIZE
+        )
+        off1, raw1 = bf.encode_directory_entry(
+            1, 902, 4, 3, 0x06D0, bf.WORKING_REGION_SIZE
+        )
         assert off1 == bf.DIRECTORY_ENTRY_SIZE
 
     def test_invalid_pattern_number_raises(self):
@@ -373,8 +378,10 @@ class TestDiskImage:
         img.write_pattern(901, [[1, 0, 1, 0]])
         raw = img.to_disk_image_bytes()
         wr = img.working_region_bytes()
-        assert raw[:bf.WORKING_REGION_SIZE] == wr
-        assert raw[bf.WORKING_REGION_SIZE:] == bytes(bf.DISK_IMAGE_SIZE - bf.WORKING_REGION_SIZE)
+        assert raw[: bf.WORKING_REGION_SIZE] == wr
+        assert raw[bf.WORKING_REGION_SIZE :] == bytes(
+            bf.DISK_IMAGE_SIZE - bf.WORKING_REGION_SIZE
+        )
 
     def test_from_bytes_full_disk_image(self):
         img = bf.DiskImage.blank()

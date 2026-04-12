@@ -143,8 +143,7 @@ class _Sector:
             raw = id_path.read_bytes()
             if len(raw) != ID_SIZE:
                 raise ValueError(
-                    f"ID file {id_path} is {len(raw)} bytes; "
-                    f"expected {ID_SIZE}"
+                    f"ID file {id_path} is {len(raw)} bytes; " f"expected {ID_SIZE}"
                 )
             id_data = bytearray(raw)
         else:
@@ -159,8 +158,7 @@ class _Sector:
     def write(self, data: bytes) -> None:
         if len(data) != SECTOR_SIZE:
             raise ValueError(
-                f"Cannot write {len(data)} bytes to sector; "
-                f"expected {SECTOR_SIZE}"
+                f"Cannot write {len(data)} bytes to sector; " f"expected {SECTOR_SIZE}"
             )
         self.data = bytearray(data)
         self.dat_path.write_bytes(data)
@@ -171,8 +169,7 @@ class _Sector:
     def write_id(self, id_data: bytes) -> None:
         if len(id_data) != ID_SIZE:
             raise ValueError(
-                f"Cannot write {len(id_data)} bytes as ID; "
-                f"expected {ID_SIZE}"
+                f"Cannot write {len(id_data)} bytes as ID; " f"expected {ID_SIZE}"
             )
         self.id_data = bytearray(id_data)
         self.id_path.write_bytes(id_data)
@@ -199,8 +196,7 @@ class _VirtualDisk:
         directory.mkdir(parents=True, exist_ok=True)
         self._dir = directory
         self._sectors: list[_Sector] = [
-            _Sector.open(directory / f"{n:02d}")
-            for n in range(NUM_SECTORS)
+            _Sector.open(directory / f"{n:02d}") for n in range(NUM_SECTORS)
         ]
         self.last_written_pair: Path | None = None
 
@@ -405,7 +401,7 @@ class PDDEmulator:
 
         count = min(_NS, len(image_bytes) // _SS)
         for n in range(count):
-            chunk = image_bytes[n * _SS: (n + 1) * _SS]
+            chunk = image_bytes[n * _SS : (n + 1) * _SS]
             self._disk.write_sector(n, chunk)
         logger.info("Loaded disk image (%d sectors)", count)
 
@@ -521,15 +517,21 @@ class PDDEmulator:
         """F/G — Format disk."""
         tokens = io.read_until_cr()
         format_sizes = {
-            "0": 64, "1": 80, "2": 128, "3": 256,
-            "4": 512, "5": 1024, "6": 1280,
+            "0": 64,
+            "1": 80,
+            "2": 128,
+            "3": 256,
+            "4": 512,
+            "5": 1024,
+            "6": 1280,
         }
         code = tokens[0] if tokens else "5"
         bps = format_sizes.get(code, 1024)
         if bps != SECTOR_SIZE:
             logger.warning(
                 "Format requested %d bytes/sector; machine uses %d — formatting anyway",
-                bps, SECTOR_SIZE,
+                bps,
+                SECTOR_SIZE,
             )
         self._disk.format()
         io.write(_STATUS_OK)
@@ -633,7 +635,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Brother KH-930E floppy drive emulator (Tandy PDD1)"
     )
-    parser.add_argument("disk_dir", help="Directory for sector files (created if absent)")
+    parser.add_argument(
+        "disk_dir", help="Directory for sector files (created if absent)"
+    )
     parser.add_argument("serial_port", help="Serial device, e.g. /dev/ttyUSB0")
     parser.add_argument(
         "--baud", type=int, default=9600, help="Baud rate (default: 9600)"

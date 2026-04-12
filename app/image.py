@@ -146,6 +146,7 @@ def load_image(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _open(source: Union[str, Path, bytes, "Image.Image"]) -> "Image.Image":
     """Normalise *source* to a PIL Image."""
     if isinstance(source, Image.Image):

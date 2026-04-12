@@ -46,7 +46,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 import serial_emulator as se
 import brother_format as bf
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -82,14 +81,17 @@ def _make_emulator(disk_dir: Path) -> se.PDDEmulator:
 
 
 class TestStatusOk:
-    @pytest.mark.parametrize("psn,expected", [
-        (0,  b"00000000"),
-        (1,  b"00010000"),
-        (5,  b"00050000"),
-        (15, b"000F0000"),
-        (16, b"00100000"),
-        (79, b"004F0000"),
-    ])
+    @pytest.mark.parametrize(
+        "psn,expected",
+        [
+            (0, b"00000000"),
+            (1, b"00010000"),
+            (5, b"00050000"),
+            (15, b"000F0000"),
+            (16, b"00100000"),
+            (79, b"004F0000"),
+        ],
+    )
     def test_known_values(self, psn, expected):
         assert se._status_ok(psn) == expected
 
@@ -115,7 +117,7 @@ class TestVirtualDisk:
 
     def test_write_and_read_sector(self, tmp_path):
         d = se._VirtualDisk(tmp_path)
-        payload = bytes(range(256)) * 4   # 1024 bytes
+        payload = bytes(range(256)) * 4  # 1024 bytes
         d.write_sector(0, payload)
         assert d.read_sector(0) == payload
 
@@ -143,11 +145,14 @@ class TestVirtualDisk:
     def test_pair_file_naming(self, tmp_path):
         d = se._VirtualDisk(tmp_path)
         data = bytes(se.SECTOR_SIZE)
-        d.write_sector(0, data); d.write_sector(1, data)
+        d.write_sector(0, data)
+        d.write_sector(1, data)
         assert d.last_written_pair.name == "file-01.dat"
-        d.write_sector(2, data); d.write_sector(3, data)
+        d.write_sector(2, data)
+        d.write_sector(3, data)
         assert d.last_written_pair.name == "file-02.dat"
-        d.write_sector(78, data); d.write_sector(79, data)
+        d.write_sector(78, data)
+        d.write_sector(79, data)
         assert d.last_written_pair.name == "file-40.dat"
 
     def test_find_sector_by_id_match(self, tmp_path):
@@ -193,7 +198,7 @@ class TestVirtualDisk:
 
     def test_wrong_size_sector_file_raises(self, tmp_path):
         bad = tmp_path / "00.dat"
-        bad.write_bytes(bytes(512))   # wrong size
+        bad.write_bytes(bytes(512))  # wrong size
         with pytest.raises(ValueError):
             se._VirtualDisk(tmp_path)
 
@@ -201,7 +206,7 @@ class TestVirtualDisk:
         # Create a valid .dat first
         (tmp_path / "00.dat").write_bytes(bytes(se.SECTOR_SIZE))
         bad_id = tmp_path / "00.id"
-        bad_id.write_bytes(bytes(6))   # wrong size
+        bad_id.write_bytes(bytes(6))  # wrong size
         with pytest.raises(ValueError):
             se._VirtualDisk(tmp_path)
 
@@ -231,9 +236,9 @@ class TestCmdReadSector:
     def test_no_data_sent_without_ack_cr(self, tmp_path):
         emu = _make_emulator(tmp_path)
         # No CR after the status — emulator should send status but no data
-        port = _FakePort(b"0\r")   # params CR only; no ack CR
+        port = _FakePort(b"0\r")  # params CR only; no ack CR
         emu._cmd_read_sector(se._SerialIO(port))
-        assert len(port.sent()) == 8   # status only
+        assert len(port.sent()) == 8  # status only
 
 
 # ---------------------------------------------------------------------------
@@ -262,7 +267,7 @@ class TestCmdWriteSector:
         callbacks = []
         emu = _make_emulator(tmp_path)
         emu._on_write = callbacks.append
-        emu._disk.write_sector(4, bytes(se.SECTOR_SIZE))   # even half
+        emu._disk.write_sector(4, bytes(se.SECTOR_SIZE))  # even half
         port = _FakePort(b"5\r" + bytes(se.SECTOR_SIZE))
         emu._cmd_write_sector(se._SerialIO(port))
         assert len(callbacks) == 1
@@ -297,7 +302,7 @@ class TestCmdReadId:
 
     def test_no_id_sent_without_ack_cr(self, tmp_path):
         emu = _make_emulator(tmp_path)
-        port = _FakePort(b"0\r")   # no ack CR
+        port = _FakePort(b"0\r")  # no ack CR
         emu._cmd_read_id(se._SerialIO(port))
         assert len(port.sent()) == 8
 
@@ -330,8 +335,8 @@ class TestCmdSearchId:
         port = _FakePort(b"0\r" + target)
         emu._cmd_search_id(se._SerialIO(port))
         sent = port.sent()
-        assert sent[:8] == b"00000000"    # initial status at PSN=0
-        assert sent[8:] == b"000B0000"   # match at sector 11 = 0x0B
+        assert sent[:8] == b"00000000"  # initial status at PSN=0
+        assert sent[8:] == b"000B0000"  # match at sector 11 = 0x0B
 
     def test_no_match_returns_not_found(self, tmp_path):
         emu = _make_emulator(tmp_path)
@@ -414,8 +419,8 @@ class TestLoadDiskImage:
         emu = se.PDDEmulator(tmp_path / "img")
         emu.load_disk_image(raw)
 
-        assert emu._disk.read_sector(0) == raw[:se.SECTOR_SIZE]
-        assert emu._disk.read_sector(1) == raw[se.SECTOR_SIZE: 2 * se.SECTOR_SIZE]
+        assert emu._disk.read_sector(0) == raw[: se.SECTOR_SIZE]
+        assert emu._disk.read_sector(1) == raw[se.SECTOR_SIZE : 2 * se.SECTOR_SIZE]
 
     def test_too_short_raises(self, tmp_path):
         emu = se.PDDEmulator(tmp_path / "img")
