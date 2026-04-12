@@ -204,7 +204,7 @@ def _bcd_decode_3digit(hundreds: int, tens: int, ones: int) -> int:
 # ---------------------------------------------------------------------------
 
 
-def _read_nibble(data: bytearray, base: int, nibble_index: int) -> int:
+def _read_nibble(data: bytearray | bytes, base: int, nibble_index: int) -> int:
     """
     Read a single nibble from `data`.
 

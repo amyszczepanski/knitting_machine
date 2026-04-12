@@ -394,8 +394,7 @@ class PDDEmulator:
         disk image.  Call this before run() to load patterns onto the emulated
         disk.
         """
-        from brother_format import SECTOR_SIZE as _SS, NUM_SECTORS as _NS
-
+        from app.brother_format import SECTOR_SIZE as _SS, NUM_SECTORS as _NS
         if len(image_bytes) < _SS * 2:
             raise ValueError("Image must be at least 2,048 bytes")
 

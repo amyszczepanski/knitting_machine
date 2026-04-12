@@ -129,7 +129,7 @@ def load_image(
     for y in range(h):
         row: list[int] = []
         for x in range(w):
-            lum: int = pixels[x, y]  # type: ignore[index]
+            lum: int = pixels[x, y]  # type: ignore[index, assignment]
             row.append(1 if lum <= threshold else 0)
         rows.append(row)
 

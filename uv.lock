@@ -167,6 +167,7 @@ dev = [
     { name = "black" },
     { name = "flake8" },
     { name = "mypy" },
+    { name = "types-pyserial" },
 ]
 
 [package.metadata]
@@ -183,6 +184,7 @@ dev = [
     { name = "black", specifier = ">=26.1.0" },
     { name = "flake8", specifier = ">=7.3.0" },
     { name = "mypy", specifier = ">=1.19.1" },
+    { name = "types-pyserial", specifier = ">=3.5.0.20260408" },
 ]
 
 [[package]]
@@ -539,6 +541,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/81/69/17425771797c36cded50b7fe44e850315d039f28b15901ab44839e70b593/starlette-1.0.0.tar.gz", hash = "sha256:6a4beaf1f81bb472fd19ea9b918b50dc3a77a6f2e190a12954b25e6ed5eea149", size = 2655289, upload-time = "2026-03-22T18:29:46.779Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0b/c9/584bc9651441b4ba60cc4d557d8a547b5aff901af35bda3a4ee30c819b82/starlette-1.0.0-py3-none-any.whl", hash = "sha256:d3ec55e0bb321692d275455ddfd3df75fff145d009685eb40dc91fc66b03d38b", size = 72651, upload-time = "2026-03-22T18:29:45.111Z" },
+]
+
+[[package]]
+name = "types-pyserial"
+version = "3.5.0.20260408"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/23/c7/75035cf4511e7e76e37eb54c7b960d184fbcad6f6b7118f9b4694167aba7/types_pyserial-3.5.0.20260408.tar.gz", hash = "sha256:8a8eb2bfcdc942a081ebf1e4c6d852683127b37c9cd2e8e17f00e2308e8e08cc", size = 20003, upload-time = "2026-04-08T04:31:43.047Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/20/e1/2336f416d9b7c00fc21a098df7838eec0199d4e4175402e553c2a867d637/types_pyserial-3.5.0.20260408-py3-none-any.whl", hash = "sha256:3c9d611de989de94748290c7de5b22f1dad295a9b96d6c371cc482c6a8485345", size = 25328, upload-time = "2026-04-08T04:31:42.175Z" },
 ]
 
 [[package]]

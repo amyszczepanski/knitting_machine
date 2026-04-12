@@ -24,9 +24,13 @@ dev = [
     "black>=26.1.0",
     "flake8>=7.3.0",
     "mypy>=1.19.1",
+    "types-pyserial>=3.5.0.20260408",
 ]
 
 [tool.black]
 line-length = 88
 target-version = ['py313']
 skip-string-normalization = false
+
+[tool.mypy]
+explicit_package_bases = true
