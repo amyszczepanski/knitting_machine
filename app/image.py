@@ -33,7 +33,13 @@ from typing import Union
 
 from PIL import Image, UnidentifiedImageError
 
-MAX_NEEDLES: int = 200  # KH-930E physical needle count
+MAX_NEEDLES: int = 200  # KH-940 physical needle count
+
+# Default stitch aspect ratio correction.  Knit stitches are approximately
+# 4 units wide × 3 units tall, so a 1:1 pixel image knitted stitch-for-stitch
+# will appear squashed vertically by roughly 1/1.33.  Stretching the image
+# vertically by this factor before binarising compensates for that distortion.
+DEFAULT_STITCH_ASPECT_RATIO: float = 4 / 3  # ≈ 1.333
 
 # Pillow resample filter — LANCZOS gives best quality for downscaling
 _RESAMPLE = Image.Resampling.LANCZOS
@@ -59,6 +65,7 @@ def load_image(
     *,
     max_width: int = MAX_NEEDLES,
     threshold: int = 128,
+    stitch_aspect_ratio: float = DEFAULT_STITCH_ASPECT_RATIO,
     crop: tuple[int, int, int, int] | None = None,
 ) -> ImageResult:
     """Load, scale, optionally crop, and binarise an image.
@@ -73,6 +80,13 @@ def load_image(
         Greyscale threshold for the 1-bit conversion [0–255].
         Pixels ≤ threshold become 1 (knit); pixels > threshold become 0.
         Default 128 (midpoint).
+    stitch_aspect_ratio:
+        Vertical stretch factor applied after width-scaling to compensate
+        for the non-square aspect ratio of knit stitches.  A value of 1.33
+        (the default, equal to 4/3) corrects for stitches that are
+        approximately 4 units wide × 3 units tall — without this correction
+        a square source image would appear squashed vertically when knitted.
+        Set to 1.0 to disable aspect-ratio correction entirely.
     crop:
         Optional (left, upper, right, lower) box applied *before* scaling,
         in original-image coordinates.  Useful when the caller has already
@@ -87,7 +101,14 @@ def load_image(
     ImageError
         If the file cannot be read, is not a recognised image format, or
         the resulting image would have zero stitches in either dimension.
+    ValueError
+        If stitch_aspect_ratio is not a positive number.
     """
+    if stitch_aspect_ratio <= 0:
+        raise ValueError(
+            f"stitch_aspect_ratio must be positive, got {stitch_aspect_ratio}"
+        )
+
     img = _open(source)
     orig_width, orig_height = img.size
 
@@ -116,6 +137,15 @@ def load_image(
         new_h = max(1, round(h * scale))
         img = img.resize((new_w, new_h), _RESAMPLE)
         w, h = img.size
+
+    # --- apply stitch aspect-ratio correction (vertical stretch) ---
+    # This compensates for knit stitches being wider than they are tall.
+    # The resize is done after the width-constraining step so that
+    # max_width still refers to the stitch count, not the pixel count.
+    if stitch_aspect_ratio != 1.0:
+        new_h = max(1, round(h * stitch_aspect_ratio))
+        img = img.resize((w, new_h), _RESAMPLE)
+        h = new_h
 
     if w == 0 or h == 0:
         raise ImageError(

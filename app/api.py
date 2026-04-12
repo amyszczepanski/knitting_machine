@@ -1,5 +1,5 @@
 """
-app/api.py — FastAPI application for the Brother KH-930E knitting machine.
+app/api.py — FastAPI application for the Brother KH-940 knitting machine.
 
 Endpoints
 ---------
@@ -54,7 +54,7 @@ from app.image import ImageError, load_image
 
 app = FastAPI(
     title="Knitting Machine API",
-    description="Brother KH-930E pattern management and upload.",
+    description="Brother KH-940 pattern management and upload.",
     version="0.1.0",
 )
 
@@ -79,7 +79,7 @@ class _AppState:
     def __init__(self) -> None:
         self.disk: DiskImage = DiskImage.blank()
         self.serial_port: str = "/dev/ttyUSB0"
-        self.baud_rate: int = 19200
+        self.baud_rate: int = 9600
         self.disk_dir: str = "/tmp/knitting_disk"
         self.tasks: dict[str, "_TaskState"] = {}
 
@@ -240,16 +240,27 @@ def write_pattern(
         int,
         Form(description="Binarisation threshold 0–255", ge=0, le=255),
     ] = 128,
+    stitch_aspect_ratio: Annotated[
+        float,
+        Form(
+            description=(
+                "Vertical stretch factor to compensate for non-square stitch "
+                "aspect ratio. 1.33 (4:3) is a good default for most yarns."
+            ),
+            gt=0,
+        ),
+    ] = 4 / 3,
 ) -> WritePatternResponse:
     """Upload an image and write it as a knitting pattern.
 
-    The image is scaled to ≤ 200 stitches wide, binarised, and encoded
-    into the Brother disk image format.  The pattern can then be sent to
-    the machine via POST /send.
+    The image is scaled to ≤ 200 stitches wide, stretched vertically by
+    stitch_aspect_ratio to correct for non-square stitch proportions,
+    binarised, and encoded into the Brother disk image format.  The pattern
+    can then be sent to the machine via POST /send.
     """
     raw = _bytes_from_upload(file)
     try:
-        result = load_image(raw, threshold=threshold)
+        result = load_image(raw, threshold=threshold, stitch_aspect_ratio=stitch_aspect_ratio)
     except ImageError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -274,11 +285,12 @@ def write_pattern(
 def preview_image(
     file: Annotated[UploadFile, File(description="Image to preview")],
     threshold: Annotated[int, Form(ge=0, le=255)] = 128,
+    stitch_aspect_ratio: Annotated[float, Form(gt=0)] = 4 / 3,
 ) -> PreviewResponse:
     """Return a scaled/binarised preview PNG without writing to disk."""
     raw = _bytes_from_upload(file)
     try:
-        result = load_image(raw, threshold=threshold)
+        result = load_image(raw, threshold=threshold, stitch_aspect_ratio=stitch_aspect_ratio)
     except ImageError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
