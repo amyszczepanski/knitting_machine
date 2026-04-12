@@ -9,11 +9,13 @@ pyserial is mocked so these tests run without a serial port installed.
 
 import io
 import sys
-import tempfile
 import types
 from pathlib import Path
 
 import pytest
+
+from app import serial_emulator as se
+from app import brother_format as bf
 
 # ---------------------------------------------------------------------------
 # Mock pyserial before importing the module under test
@@ -42,9 +44,6 @@ class _FakeSerial:
 _serial_mock.Serial = _FakeSerial
 sys.modules["serial"] = _serial_mock
 
-sys.path.insert(0, str(Path(__file__).parent))
-import serial_emulator as se
-import brother_format as bf
 
 # ---------------------------------------------------------------------------
 # Helpers
