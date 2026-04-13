@@ -142,6 +142,7 @@ from typing import Sequence
 
 class MachineModel(Enum):
     """Supported Brother knitting machine models."""
+
     KH930 = "KH-930"
     KH940 = "KH-940"
 
@@ -163,7 +164,7 @@ DIRECTORY_ENTRY_SIZE: int = 7
 # Constants — KH-930
 # ---------------------------------------------------------------------------
 
-KH930_WORKING_REGION_SIZE: int = 2 * SECTOR_SIZE          # 2,048 bytes
+KH930_WORKING_REGION_SIZE: int = 2 * SECTOR_SIZE  # 2,048 bytes
 KH930_WORKING_SECTORS: int = 2
 KH930_MAX_PATTERNS: int = 99
 KH930_INIT_PATTERN_OFFSET: int = 0x06DF
@@ -178,10 +179,10 @@ KH930_SELECT_ADDR: int = 0x07EA
 # Constants — KH-940
 # ---------------------------------------------------------------------------
 
-KH940_WORKING_REGION_SIZE: int = 32 * SECTOR_SIZE         # 32,768 bytes
+KH940_WORKING_REGION_SIZE: int = 32 * SECTOR_SIZE  # 32,768 bytes
 KH940_WORKING_SECTORS: int = 32
 KH940_MAX_PATTERNS: int = 98
-KH940_INIT_PATTERN_OFFSET: int = 0x7EDF                   # file address
+KH940_INIT_PATTERN_OFFSET: int = 0x7EDF  # file address
 KH940_LAST_BYTE_ADDR: int = 0x7FFF
 
 # Control data block base address (file address)
@@ -495,9 +496,9 @@ class PatternEntry:
     differently on each machine but the computed properties are the same.
     """
 
-    number: int    # 901–999
+    number: int  # 901–999
     stitches: int  # 1–200
-    rows: int      # 1–999
+    rows: int  # 1–999
 
     # KH-930: flag = high byte of reversed-address pointer;
     #         pointer_low = low byte.
@@ -730,13 +731,13 @@ def _encode_finhdr_940(slot_index: int, next_number: int) -> tuple[int, bytes]:
     ph, pt, po = _bcd_encode_3digit(next_number)
     entry = bytes(
         [
-            KH940_FILL_BYTE,   # 0
-            KH940_FILL_BYTE,   # 1
-            KH940_FILL_BYTE,   # 2
-            KH940_FILL_BYTE,   # 3
-            KH940_FILL_BYTE,   # 4
-            (0x0 << 4) | ph,   # 5  XX=0, hundreds
-            (pt << 4) | po,    # 6  tens, ones
+            KH940_FILL_BYTE,  # 0
+            KH940_FILL_BYTE,  # 1
+            KH940_FILL_BYTE,  # 2
+            KH940_FILL_BYTE,  # 3
+            KH940_FILL_BYTE,  # 4
+            (0x0 << 4) | ph,  # 5  XX=0, hundreds
+            (pt << 4) | po,  # 6  tens, ones
         ]
     )
     return slot_index * DIRECTORY_ENTRY_SIZE, entry
@@ -939,19 +940,19 @@ class DiskImage:
             self._data[base + offset] = (value >> 8) & 0xFF
             self._data[base + offset + 1] = value & 0xFF
 
-        _write16(0x00, next_ptr)       # PATTERN_PTR1
-        _write16(0x02, 0x0001)         # UNK1
-        _write16(0x04, next_ptr)       # PATTERN_PTR0
-        _write16(0x06, last_bottom)    # LAST_BOTTOM
-        _write16(0x08, 0x0000)         # UNK2
-        _write16(0x0A, last_top)       # LAST_TOP
+        _write16(0x00, next_ptr)  # PATTERN_PTR1
+        _write16(0x02, 0x0001)  # UNK1
+        _write16(0x04, next_ptr)  # PATTERN_PTR0
+        _write16(0x06, last_bottom)  # LAST_BOTTOM
+        _write16(0x08, 0x0000)  # UNK2
+        _write16(0x0A, last_top)  # LAST_TOP
         # UNK3: 4 bytes = 0x00008100
         self._data[base + 0x0C] = 0x00
         self._data[base + 0x0D] = 0x00
         self._data[base + 0x0E] = 0x81
         self._data[base + 0x0F] = 0x00
-        _write16(0x10, 0x7FF9)         # HEADER_PTR (default; updated after writes)
-        _write16(0x12, 0x0000)         # UNK_PTR
+        _write16(0x10, 0x7FF9)  # HEADER_PTR (default; updated after writes)
+        _write16(0x12, 0x0000)  # UNK_PTR
         self._data[base + 0x14] = 0x00
         self._data[base + 0x15] = 0x00
         self._data[base + 0x16] = 0x00  # UNK4

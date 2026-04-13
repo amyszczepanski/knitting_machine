@@ -283,7 +283,12 @@ class TestDirectoryEntry930:
             )
         with pytest.raises(ValueError):
             bf.encode_directory_entry(
-                0, 1000, 4, 3, bf.KH930_INIT_PATTERN_OFFSET, bf.KH930_WORKING_REGION_SIZE
+                0,
+                1000,
+                4,
+                3,
+                bf.KH930_INIT_PATTERN_OFFSET,
+                bf.KH930_WORKING_REGION_SIZE,
             )
 
     def test_invalid_stitch_count_raises(self):
@@ -293,7 +298,12 @@ class TestDirectoryEntry930:
             )
         with pytest.raises(ValueError):
             bf.encode_directory_entry(
-                0, 901, 201, 3, bf.KH930_INIT_PATTERN_OFFSET, bf.KH930_WORKING_REGION_SIZE
+                0,
+                901,
+                201,
+                3,
+                bf.KH930_INIT_PATTERN_OFFSET,
+                bf.KH930_WORKING_REGION_SIZE,
             )
 
 
