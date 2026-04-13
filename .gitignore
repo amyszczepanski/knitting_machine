@@ -1,6 +1,3 @@
-# data files
-img/*
-
 # python files
 *.pyc
 
