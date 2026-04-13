@@ -45,7 +45,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
 
-from app.brother_format import DiskImage
+from app.brother_format import DiskImage, MachineModel
 from app.image import ImageError, load_image
 
 # ---------------------------------------------------------------------------
@@ -77,7 +77,8 @@ class _AppState:
     pattern writes; good enough for a single-user machine-side tool."""
 
     def __init__(self) -> None:
-        self.disk: DiskImage = DiskImage.blank()
+        self.model: MachineModel = MachineModel.KH940
+        self.disk: DiskImage = DiskImage.blank(self.model)
         self.serial_port: str = "/dev/ttyUSB0"
         self.baud_rate: int = 9600
         self.disk_dir: str = "/tmp/knitting_disk"
@@ -365,5 +366,5 @@ def update_config(req: ConfigRequest) -> ConfigResponse:
 @app.delete("/disk")
 def reset_disk() -> dict[str, str]:
     """Wipe the in-memory disk image back to blank."""
-    _state.disk = DiskImage.blank()
+    _state.disk = DiskImage.blank(_state.model)
     return {"status": "ok", "detail": "Disk image reset to blank."}

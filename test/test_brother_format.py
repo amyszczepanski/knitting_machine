@@ -2,7 +2,7 @@
 test_brother_format.py — pytest suite for brother_format.py
 
 Run with:
-    pytest test_brother_format.py -v
+    pytest test/test_brother_format.py -v
 """
 
 import random
@@ -11,8 +11,12 @@ import pytest
 
 import app.brother_format as bf
 
+# Shorthand
+KH930 = bf.MachineModel.KH930
+KH940 = bf.MachineModel.KH940
+
 # ---------------------------------------------------------------------------
-# Geometry helpers
+# Geometry helpers (model-independent)
 # ---------------------------------------------------------------------------
 
 
@@ -185,8 +189,8 @@ class TestPatternCodec:
         encoded = bf.encode_pattern_data(pixel_rows, 4, 3)
         assert len(encoded) == bf.bytes_per_pattern(4, 3)
 
-        buf = bytearray(bf.WORKING_REGION_SIZE)
-        offset = bf.INIT_PATTERN_OFFSET
+        buf = bytearray(bf.KH930_WORKING_REGION_SIZE)
+        offset = bf.KH930_INIT_PATTERN_OFFSET
         start = offset - len(encoded) + 1
         buf[start : offset + 1] = encoded
 
@@ -202,8 +206,8 @@ class TestPatternCodec:
         encoded = bf.encode_pattern_data(pixel_rows, stitches, rows)
         assert len(encoded) == bf.bytes_per_pattern(stitches, rows)
 
-        buf = bytearray(bf.WORKING_REGION_SIZE)
-        offset = bf.INIT_PATTERN_OFFSET
+        buf = bytearray(bf.KH930_WORKING_REGION_SIZE)
+        offset = bf.KH930_INIT_PATTERN_OFFSET
         buf[offset - len(encoded) + 1 : offset + 1] = encoded
         assert bf.decode_pattern_data(buf, offset, stitches, rows) == pixel_rows
 
@@ -224,20 +228,19 @@ class TestPatternCodec:
 
 
 # ---------------------------------------------------------------------------
-# Directory entry encode / decode
+# Directory entry encode / decode — KH-930
 # ---------------------------------------------------------------------------
 
 
-class TestDirectoryEntry:
+class TestDirectoryEntry930:
     def test_roundtrip(self):
-        # Write entry for pattern 901, 60 stitches, 150 rows at memo_offset 0x06DF
         offset, raw = bf.encode_directory_entry(
             slot_index=0,
             number=901,
             stitches=60,
             rows=150,
-            memo_offset=bf.INIT_PATTERN_OFFSET,
-            data_length=bf.WORKING_REGION_SIZE,
+            memo_offset=bf.KH930_INIT_PATTERN_OFFSET,
+            data_length=bf.KH930_WORKING_REGION_SIZE,
         )
         assert offset == 0
         assert len(raw) == bf.DIRECTORY_ENTRY_SIZE
@@ -252,58 +255,140 @@ class TestDirectoryEntry:
         assert bf.decode_directory_entry(bytes(bf.DIRECTORY_ENTRY_SIZE)) is None
 
     def test_memo_offset_roundtrip(self):
-        memo_offset = 0x06DF
+        memo_offset = bf.KH930_INIT_PATTERN_OFFSET
         offset, raw = bf.encode_directory_entry(
             slot_index=0,
             number=901,
             stitches=4,
             rows=3,
             memo_offset=memo_offset,
-            data_length=bf.WORKING_REGION_SIZE,
+            data_length=bf.KH930_WORKING_REGION_SIZE,
         )
         entry = bf.decode_directory_entry(raw)
         assert entry.memo_offset == memo_offset
 
     def test_slot_index_sets_byte_offset(self):
         _, raw0 = bf.encode_directory_entry(
-            0, 901, 4, 3, 0x06DF, bf.WORKING_REGION_SIZE
+            0, 901, 4, 3, bf.KH930_INIT_PATTERN_OFFSET, bf.KH930_WORKING_REGION_SIZE
         )
         off1, raw1 = bf.encode_directory_entry(
-            1, 902, 4, 3, 0x06D0, bf.WORKING_REGION_SIZE
+            1, 902, 4, 3, 0x06D0, bf.KH930_WORKING_REGION_SIZE
         )
         assert off1 == bf.DIRECTORY_ENTRY_SIZE
 
     def test_invalid_pattern_number_raises(self):
         with pytest.raises(ValueError):
-            bf.encode_directory_entry(0, 900, 4, 3, 0x06DF, bf.WORKING_REGION_SIZE)
+            bf.encode_directory_entry(
+                0, 900, 4, 3, bf.KH930_INIT_PATTERN_OFFSET, bf.KH930_WORKING_REGION_SIZE
+            )
         with pytest.raises(ValueError):
-            bf.encode_directory_entry(0, 1000, 4, 3, 0x06DF, bf.WORKING_REGION_SIZE)
+            bf.encode_directory_entry(
+                0, 1000, 4, 3, bf.KH930_INIT_PATTERN_OFFSET, bf.KH930_WORKING_REGION_SIZE
+            )
 
     def test_invalid_stitch_count_raises(self):
         with pytest.raises(ValueError):
-            bf.encode_directory_entry(0, 901, 0, 3, 0x06DF, bf.WORKING_REGION_SIZE)
+            bf.encode_directory_entry(
+                0, 901, 0, 3, bf.KH930_INIT_PATTERN_OFFSET, bf.KH930_WORKING_REGION_SIZE
+            )
         with pytest.raises(ValueError):
-            bf.encode_directory_entry(0, 901, 201, 3, 0x06DF, bf.WORKING_REGION_SIZE)
+            bf.encode_directory_entry(
+                0, 901, 201, 3, bf.KH930_INIT_PATTERN_OFFSET, bf.KH930_WORKING_REGION_SIZE
+            )
 
 
 # ---------------------------------------------------------------------------
-# DiskImage
+# Directory entry encode / decode — KH-940
 # ---------------------------------------------------------------------------
 
 
-class TestDiskImage:
+class TestDirectoryEntry940:
+    def test_roundtrip(self):
+        offset, raw = bf.encode_directory_entry_940(
+            slot_index=0,
+            number=901,
+            stitches=60,
+            rows=150,
+            memo_offset=bf.KH940_INIT_PATTERN_OFFSET,
+        )
+        assert offset == 0
+        assert len(raw) == bf.DIRECTORY_ENTRY_SIZE
+
+        entry = bf.decode_directory_entry_940(raw)
+        assert entry is not None
+        assert entry.number == 901
+        assert entry.stitches == 60
+        assert entry.rows == 150
+
+    def test_memo_offset_roundtrip(self):
+        memo_offset = bf.KH940_INIT_PATTERN_OFFSET
+        _, raw = bf.encode_directory_entry_940(
+            slot_index=0,
+            number=901,
+            stitches=4,
+            rows=3,
+            memo_offset=memo_offset,
+        )
+        entry = bf.decode_directory_entry_940(raw)
+        assert entry.memo_offset == memo_offset
+
+    def test_fill_byte_slot_returns_none(self):
+        raw = bytes([bf.KH940_FILL_BYTE] * bf.DIRECTORY_ENTRY_SIZE)
+        assert bf.decode_directory_entry_940(raw) is None
+
+    def test_finhdr_returns_none(self):
+        _, raw = bf._encode_finhdr_940(slot_index=1, next_number=902)
+        assert bf.decode_directory_entry_940(raw) is None
+
+    def test_slot_index_sets_byte_offset(self):
+        off1, _ = bf.encode_directory_entry_940(
+            1, 902, 4, 3, bf.KH940_INIT_PATTERN_OFFSET - 10
+        )
+        assert off1 == bf.DIRECTORY_ENTRY_SIZE
+
+    def test_pointer_is_16bit_binary_not_bcd(self):
+        """DATA_OFFSET must be a plain 16-bit value, not BCD."""
+        memo_offset = bf.KH940_INIT_PATTERN_OFFSET
+        expected_offset = bf.KH940_REVERSED_BASE - memo_offset
+        _, raw = bf.encode_directory_entry_940(0, 901, 4, 3, memo_offset)
+        stored = (raw[0] << 8) | raw[1]
+        assert stored == expected_offset
+
+    def test_invalid_pattern_number_raises(self):
+        with pytest.raises(ValueError):
+            bf.encode_directory_entry_940(0, 900, 4, 3, bf.KH940_INIT_PATTERN_OFFSET)
+        with pytest.raises(ValueError):
+            bf.encode_directory_entry_940(0, 1000, 4, 3, bf.KH940_INIT_PATTERN_OFFSET)
+
+    def test_invalid_stitch_count_raises(self):
+        with pytest.raises(ValueError):
+            bf.encode_directory_entry_940(0, 901, 0, 3, bf.KH940_INIT_PATTERN_OFFSET)
+        with pytest.raises(ValueError):
+            bf.encode_directory_entry_940(0, 901, 201, 3, bf.KH940_INIT_PATTERN_OFFSET)
+
+
+# ---------------------------------------------------------------------------
+# DiskImage — KH-930
+# ---------------------------------------------------------------------------
+
+
+class TestDiskImage930:
     def test_blank_has_no_patterns(self):
-        img = bf.DiskImage.blank()
+        img = bf.DiskImage.blank(KH930)
         assert img.list_patterns() == []
 
+    def test_working_region_size(self):
+        img = bf.DiskImage.blank(KH930)
+        assert len(img.working_region_bytes()) == bf.KH930_WORKING_REGION_SIZE
+
     def test_write_and_read_pattern(self):
-        img = bf.DiskImage.blank()
+        img = bf.DiskImage.blank(KH930)
         pat = [[1, 0, 1, 0], [0, 1, 0, 1], [1, 1, 0, 0]]
         img.write_pattern(901, pat)
         assert img.read_pattern(901) == pat
 
     def test_write_multiple_patterns(self):
-        img = bf.DiskImage.blank()
+        img = bf.DiskImage.blank(KH930)
         pat1 = [[1, 0, 1, 0], [0, 1, 0, 1]]
         pat2 = [[0, 0, 1, 1, 0, 0], [1, 1, 0, 0, 1, 1]]
         img.write_pattern(901, pat1)
@@ -312,50 +397,50 @@ class TestDiskImage:
         assert img.read_pattern(902) == pat2
 
     def test_list_patterns(self):
-        img = bf.DiskImage.blank()
+        img = bf.DiskImage.blank(KH930)
         img.write_pattern(901, [[1, 0, 1, 0]])
         img.write_pattern(950, [[0, 1, 0, 1]])
         numbers = [e.number for e in img.list_patterns()]
         assert numbers == [901, 950]
 
     def test_read_nonexistent_raises(self):
-        img = bf.DiskImage.blank()
+        img = bf.DiskImage.blank(KH930)
         with pytest.raises(KeyError):
             img.read_pattern(901)
 
     def test_duplicate_pattern_number_raises(self):
-        img = bf.DiskImage.blank()
+        img = bf.DiskImage.blank(KH930)
         img.write_pattern(901, [[1, 0, 1, 0]])
         with pytest.raises(ValueError):
             img.write_pattern(901, [[0, 1, 0, 1]])
 
     def test_full_image_raises(self):
-        img = bf.DiskImage.blank()
-        for n in range(901, 901 + bf.MAX_PATTERNS):
+        img = bf.DiskImage.blank(KH930)
+        for n in range(901, 901 + bf.KH930_MAX_PATTERNS):
             img.write_pattern(n, [[1, 0, 1, 0]])
         with pytest.raises(ValueError):
-            img.write_pattern(901 + bf.MAX_PATTERNS, [[1, 0, 1, 0]])
+            img.write_pattern(901 + bf.KH930_MAX_PATTERNS, [[1, 0, 1, 0]])
 
     def test_roundtrip_via_bytes(self):
-        img = bf.DiskImage.blank()
+        img = bf.DiskImage.blank(KH930)
         pat1 = [[1, 0, 1, 0], [0, 1, 0, 1]]
         pat2 = [[1, 1, 0, 0]]
         img.write_pattern(901, pat1)
         img.write_pattern(902, pat2)
 
         raw = img.working_region_bytes()
-        img2 = bf.DiskImage.from_bytes(raw)
+        img2 = bf.DiskImage.from_bytes(raw, KH930)
         assert img2.read_pattern(901) == pat1
         assert img2.read_pattern(902) == pat2
 
     def test_200_stitch_pattern(self):
-        img = bf.DiskImage.blank()
+        img = bf.DiskImage.blank(KH930)
         wide = [[i % 2 for i in range(200)]]
         img.write_pattern(901, wide)
         assert img.read_pattern(901) == wide
 
     def test_to_sector_files(self):
-        img = bf.DiskImage.blank()
+        img = bf.DiskImage.blank(KH930)
         img.write_pattern(901, [[1, 0, 1, 0]])
         sectors = img.to_sector_files()
         assert len(sectors) == 80
@@ -367,37 +452,259 @@ class TestDiskImage:
             assert sectors[n] == bytes(bf.SECTOR_SIZE)
 
     def test_to_disk_image_bytes_length(self):
-        img = bf.DiskImage.blank()
+        img = bf.DiskImage.blank(KH930)
         assert len(img.to_disk_image_bytes()) == bf.DISK_IMAGE_SIZE
 
     def test_to_disk_image_bytes_content(self):
-        img = bf.DiskImage.blank()
+        img = bf.DiskImage.blank(KH930)
         img.write_pattern(901, [[1, 0, 1, 0]])
         raw = img.to_disk_image_bytes()
         wr = img.working_region_bytes()
-        assert raw[: bf.WORKING_REGION_SIZE] == wr
-        assert raw[bf.WORKING_REGION_SIZE :] == bytes(
-            bf.DISK_IMAGE_SIZE - bf.WORKING_REGION_SIZE
+        assert raw[: bf.KH930_WORKING_REGION_SIZE] == wr
+        assert raw[bf.KH930_WORKING_REGION_SIZE :] == bytes(
+            bf.DISK_IMAGE_SIZE - bf.KH930_WORKING_REGION_SIZE
         )
 
     def test_from_bytes_full_disk_image(self):
-        img = bf.DiskImage.blank()
+        img = bf.DiskImage.blank(KH930)
         pat = [[1, 0, 1, 0], [0, 1, 0, 1]]
         img.write_pattern(901, pat)
         full = img.to_disk_image_bytes()
-        img2 = bf.DiskImage.from_bytes(full)
+        img2 = bf.DiskImage.from_bytes(full, KH930)
         assert img2.read_pattern(901) == pat
 
     def test_from_bytes_too_short_raises(self):
         with pytest.raises(ValueError):
-            bf.DiskImage.from_bytes(bytes(100))
+            bf.DiskImage.from_bytes(bytes(100), KH930)
 
     def test_random_pattern_roundtrip(self):
         random.seed(99)
-        img = bf.DiskImage.blank()
+        img = bf.DiskImage.blank(KH930)
         stitches, rows = 13, 8
         pat = [[random.randint(0, 1) for _ in range(stitches)] for _ in range(rows)]
         img.write_pattern(901, pat)
         raw = img.working_region_bytes()
-        img2 = bf.DiskImage.from_bytes(raw)
+        img2 = bf.DiskImage.from_bytes(raw, KH930)
         assert img2.read_pattern(901) == pat
+
+
+# ---------------------------------------------------------------------------
+# DiskImage — KH-940
+# ---------------------------------------------------------------------------
+
+
+class TestDiskImage940:
+    def test_blank_has_no_patterns(self):
+        img = bf.DiskImage.blank(KH940)
+        assert img.list_patterns() == []
+
+    def test_default_model_is_kh940(self):
+        img = bf.DiskImage.blank()
+        assert img.model == KH940
+
+    def test_working_region_size(self):
+        img = bf.DiskImage.blank(KH940)
+        assert len(img.working_region_bytes()) == bf.KH940_WORKING_REGION_SIZE
+
+    def test_to_disk_image_bytes_length(self):
+        img = bf.DiskImage.blank(KH940)
+        assert len(img.to_disk_image_bytes()) == bf.DISK_IMAGE_SIZE
+
+    def test_working_sectors_in_disk_image(self):
+        img = bf.DiskImage.blank(KH940)
+        img.write_pattern(901, [[1, 0, 1, 0]])
+        raw = img.to_disk_image_bytes()
+        wr = img.working_region_bytes()
+        # First 32 sectors = working region
+        assert raw[: bf.KH940_WORKING_REGION_SIZE] == wr
+        # Sectors 32–79 are zero-padded
+        assert raw[bf.KH940_WORKING_REGION_SIZE :] == bytes(
+            bf.DISK_IMAGE_SIZE - bf.KH940_WORKING_REGION_SIZE
+        )
+
+    def test_to_sector_files_940(self):
+        img = bf.DiskImage.blank(KH940)
+        img.write_pattern(901, [[1, 0, 1, 0]])
+        sectors = img.to_sector_files()
+        assert len(sectors) == 80
+        # First 32 sectors contain the working region
+        working = b"".join(sectors[n] for n in range(32))
+        assert working == img.working_region_bytes()
+        # Sectors 32–79 are zeros
+        for n in range(32, 80):
+            assert sectors[n] == bytes(bf.SECTOR_SIZE)
+
+    def test_write_and_read_pattern(self):
+        img = bf.DiskImage.blank(KH940)
+        pat = [[1, 0, 1, 0], [0, 1, 0, 1], [1, 1, 0, 0]]
+        img.write_pattern(901, pat)
+        assert img.read_pattern(901) == pat
+
+    def test_write_multiple_patterns(self):
+        img = bf.DiskImage.blank(KH940)
+        pat1 = [[1, 0, 1, 0], [0, 1, 0, 1]]
+        pat2 = [[0, 0, 1, 1, 0, 0], [1, 1, 0, 0, 1, 1]]
+        img.write_pattern(901, pat1)
+        img.write_pattern(902, pat2)
+        assert img.read_pattern(901) == pat1
+        assert img.read_pattern(902) == pat2
+
+    def test_list_patterns(self):
+        img = bf.DiskImage.blank(KH940)
+        img.write_pattern(901, [[1, 0, 1, 0]])
+        img.write_pattern(950, [[0, 1, 0, 1]])
+        numbers = [e.number for e in img.list_patterns()]
+        assert numbers == [901, 950]
+
+    def test_read_nonexistent_raises(self):
+        img = bf.DiskImage.blank(KH940)
+        with pytest.raises(KeyError):
+            img.read_pattern(901)
+
+    def test_duplicate_pattern_number_raises(self):
+        img = bf.DiskImage.blank(KH940)
+        img.write_pattern(901, [[1, 0, 1, 0]])
+        with pytest.raises(ValueError):
+            img.write_pattern(901, [[0, 1, 0, 1]])
+
+    def test_full_image_raises(self):
+        img = bf.DiskImage.blank(KH940)
+        for n in range(901, 901 + bf.KH940_MAX_PATTERNS):
+            img.write_pattern(n, [[1, 0, 1, 0]])
+        with pytest.raises(ValueError):
+            img.write_pattern(901 + bf.KH940_MAX_PATTERNS, [[1, 0, 1, 0]])
+
+    def test_roundtrip_via_bytes(self):
+        img = bf.DiskImage.blank(KH940)
+        pat1 = [[1, 0, 1, 0], [0, 1, 0, 1]]
+        pat2 = [[1, 1, 0, 0]]
+        img.write_pattern(901, pat1)
+        img.write_pattern(902, pat2)
+
+        raw = img.working_region_bytes()
+        img2 = bf.DiskImage.from_bytes(raw, KH940)
+        assert img2.read_pattern(901) == pat1
+        assert img2.read_pattern(902) == pat2
+
+    def test_200_stitch_pattern(self):
+        img = bf.DiskImage.blank(KH940)
+        wide = [[i % 2 for i in range(200)]]
+        img.write_pattern(901, wide)
+        assert img.read_pattern(901) == wide
+
+    def test_from_bytes_too_short_raises(self):
+        with pytest.raises(ValueError):
+            bf.DiskImage.from_bytes(bytes(100), KH940)
+
+    def test_random_pattern_roundtrip(self):
+        random.seed(99)
+        img = bf.DiskImage.blank(KH940)
+        stitches, rows = 13, 8
+        pat = [[random.randint(0, 1) for _ in range(stitches)] for _ in range(rows)]
+        img.write_pattern(901, pat)
+        raw = img.working_region_bytes()
+        img2 = bf.DiskImage.from_bytes(raw, KH940)
+        assert img2.read_pattern(901) == pat
+
+    def test_last_byte_is_0x02(self):
+        img = bf.DiskImage.blank(KH940)
+        assert img._data[0x7FFF] == 0x02
+
+    def test_unused_directory_slots_are_fill_byte(self):
+        img = bf.DiskImage.blank(KH940)
+        # Before any writes, slot 0 should be all 0x55
+        slot0 = img._data[0:7]
+        assert all(b == bf.KH940_FILL_BYTE for b in slot0)
+
+    def test_finhdr_written_after_pattern(self):
+        img = bf.DiskImage.blank(KH940)
+        img.write_pattern(901, [[1, 0, 1, 0]])
+        # Slot 1 should be the FINHDR (first byte = 0x55)
+        finhdr = img._data[bf.DIRECTORY_ENTRY_SIZE : 2 * bf.DIRECTORY_ENTRY_SIZE]
+        assert finhdr[0] == bf.KH940_FILL_BYTE
+
+    def test_control_data_unk1_is_0x0001(self):
+        img = bf.DiskImage.blank(KH940)
+        img.write_pattern(901, [[1, 0, 1, 0]])
+        base = bf.KH940_CONTROL_DATA_ADDR
+        unk1 = (img._data[base + 2] << 8) | img._data[base + 3]
+        assert unk1 == 0x0001
+
+    def test_control_data_unk3_is_0x00008100(self):
+        img = bf.DiskImage.blank(KH940)
+        img.write_pattern(901, [[1, 0, 1, 0]])
+        base = bf.KH940_CONTROL_DATA_ADDR
+        unk3 = (
+            (img._data[base + 0x0C] << 24)
+            | (img._data[base + 0x0D] << 16)
+            | (img._data[base + 0x0E] << 8)
+            | img._data[base + 0x0F]
+        )
+        assert unk3 == 0x00008100
+
+    def test_loaded_pattern_reflects_last_written(self):
+        img = bf.DiskImage.blank(KH940)
+        img.write_pattern(901, [[1, 0, 1, 0]])
+        img.write_pattern(942, [[0, 1, 0, 1]])
+        b0 = img._data[bf.KH940_LOADED_PATTERN_ADDR]
+        b1 = img._data[bf.KH940_LOADED_PATTERN_ADDR + 1]
+        upper = (b0 & 0xF0) >> 4
+        assert upper == 0x1  # XX nibble always 1
+        ph = b0 & 0x0F
+        pt = (b1 & 0xF0) >> 4
+        po = b1 & 0x0F
+        number = bf._bcd_decode_3digit(ph, pt, po)
+        assert number == 942
+
+    def test_from_bytes_full_disk_image(self):
+        img = bf.DiskImage.blank(KH940)
+        pat = [[1, 0, 1, 0], [0, 1, 0, 1]]
+        img.write_pattern(901, pat)
+        full = img.to_disk_image_bytes()
+        img2 = bf.DiskImage.from_bytes(full, KH940)
+        assert img2.read_pattern(901) == pat
+
+    def test_large_pattern_fits_in_940_not_930(self):
+        """A large pattern that overflows KH-930 memory should fit in KH-940."""
+        # 200 stitches × 400 rows ≈ 20,000 bytes — well beyond the KH-930's
+        # ~1,300 bytes of usable pattern space.
+        stitches, rows = 200, 400
+        pat = [[i % 2 for i in range(stitches)] for _ in range(rows)]
+
+        img_940 = bf.DiskImage.blank(KH940)
+        img_940.write_pattern(901, pat)
+        assert img_940.read_pattern(901) == pat
+
+        img_930 = bf.DiskImage.blank(KH930)
+        with pytest.raises(ValueError):
+            img_930.write_pattern(901, pat)
+
+    def test_pattern_memory_does_not_overlap_directory(self):
+        """Pattern data must stay above the directory region (0x02AD)."""
+        img = bf.DiskImage.blank(KH940)
+        pat = [[i % 2 for i in range(200)] for _ in range(400)]
+        img.write_pattern(901, pat)
+        entry = img.get_pattern_entry(901)
+        assert entry.block_end_offset > 0x02AD
+
+
+# ---------------------------------------------------------------------------
+# Backwards-compatibility aliases
+# ---------------------------------------------------------------------------
+
+
+class TestBackwardsCompatAliases:
+    """The old module-level names should still resolve to the KH-930 values."""
+
+    def test_working_region_size_alias(self):
+        assert bf.WORKING_REGION_SIZE == bf.KH930_WORKING_REGION_SIZE
+
+    def test_max_patterns_alias(self):
+        assert bf.MAX_PATTERNS == bf.KH930_MAX_PATTERNS
+
+    def test_init_pattern_offset_alias(self):
+        assert bf.INIT_PATTERN_OFFSET == bf.KH930_INIT_PATTERN_OFFSET
+
+    def test_disk_image_blank_default_is_940(self):
+        img = bf.DiskImage.blank()
+        assert img.model == KH940

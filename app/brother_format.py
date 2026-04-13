@@ -1,14 +1,17 @@
 """
 brother_format.py — Brother KH-930/940 disk image format encoder/decoder.
 
-Binary format reference (reverse-engineered by Steve Conklin, Travis Goodspeed,
-and others; documented in https://github.com/stg/knittington/blob/master/doc/kh940_format.txt).
+Binary format references:
+  KH-930: reverse-engineered by Steve Conklin, Travis Goodspeed, and others;
+          documented in https://github.com/stg/knittington/blob/master/doc/kh940_format.txt
+  KH-940: documented in the knittington KH940 format spec
 
-DISK IMAGE LAYOUT
------------------
+============================================================
+KH-930 DISK IMAGE LAYOUT
+============================================================
 A full disk image is 81,920 bytes: 80 sectors × 1,024 bytes each.
-The machine treats this as a flat 2,048-byte address space (the first two sectors,
-00.dat and 01.dat, are the only ones that matter for pattern data).
+The machine treats this as a flat 2,048-byte address space (the first two
+sectors, 00.dat and 01.dat, are the only ones that matter for pattern data).
 
 ADDRESS SPACE (0x0000–0x07FF, within the 2,048-byte working region)
 --------------------------------------------------------------------
@@ -22,114 +25,189 @@ ADDRESS SPACE (0x0000–0x07FF, within the 2,048-byte working region)
 0x07FB–0x07FE   motif data
 0x07FE–0x07FF   patternPosition
 
-PATTERN DIRECTORY ENTRY (7 bytes per pattern, 99 entries, index 0–98)
-----------------------------------------------------------------------
+PATTERN DIRECTORY ENTRY — KH-930 (7 bytes per pattern, 99 entries, index 0–98)
+-------------------------------------------------------------------------------
 Each entry uses BCD (Binary Coded Decimal) encoding: each decimal digit
 occupies one nibble (4 bits).
 
   Byte 0:   flag      — 0x00 = empty slot; nonzero = valid pattern.
-                        In "pointer mode" the flag byte is also the high byte
-                        of a 16-bit reversed-address pointer (see below).
-  Byte 1:   unknown   — Low byte of the reversed-address pointer (pointer mode).
+                        Also the high byte of a 16-bit reversed-address pointer.
+  Byte 1:   unknown   — Low byte of the reversed-address pointer.
   Byte 2:   rh:rt     — MSN=rows hundreds, LSN=rows tens
   Byte 3:   ro:sh     — MSN=rows ones,    LSN=stitches hundreds
   Byte 4:   st:so     — MSN=stitches tens, LSN=stitches ones
   Byte 5:   unk:ph    — MSN=unused,        LSN=pattern number hundreds
   Byte 6:   pt:po     — MSN=pattern number tens, LSN=pattern number ones
 
-  Pattern numbers are 901–999 (custom patterns).
+  Pointer:  memo_offset = (WORKING_REGION_SIZE - 1) - ((flag << 8) | unknown)
 
-POINTER MODE (the correct mode for KH-930/940)
------------------------------------------------
-The flag:unknown pair encodes a reversed-address pointer:
+============================================================
+KH-940 DISK IMAGE LAYOUT
+============================================================
+A full disk image is 81,920 bytes: 80 sectors × 1,024 bytes each.
+The machine uses the FIRST 32 sectors as a flat 32,768-byte working region
+(0x0000–0x7FFF), treated as a binary dump of the machine's external RAM.
 
-    memo_offset = len(data) - 1 - ((flag << 8) | unknown)
+All offsets below are "reversed address" offsets from the LAST_BYTE (0x7FFF):
+  file_address = 0x7FFF - offset
+  offset = 0x7FFF - file_address
 
-"Reversed address" means offset 0 points to the LAST byte of the file,
-offset 1 points to the second-to-last byte, etc.  Pattern data therefore
-grows DOWNWARD from 0x06DF toward lower addresses.
+ADDRESS SPACE (file addresses within the 32,768-byte working region)
+--------------------------------------------------------------------
+0x0000–0x02AD   PATTERN_LIST: up to 98 pattern headers × 7 bytes each
+0x02AE–0x7EDF   PATTERN_MEMORY: pattern data, grows upward toward 0x7EDF
+0x7EE0–0x7EE6   AREA0 (unused, write 0x55)
+0x7EE7–0x7EFF   AREA1 (write 0x00)
+0x7F00–0x7F16   CONTROL_DATA (see below)
+0x7F17–0x7F2F   AREA2 (write 0x00)
+0x7F30–0x7FE9   AREA3 (write 0x00)
+0x7FEA–0x7FEB   LOADED_PATTERN
+0x7FEC–0x7FFE   AREA4 (write 0x00)
+0x7FFF          LAST_BYTE (write 0x02)
 
-PATTERN DATA LAYOUT (within the 2,048-byte region)
----------------------------------------------------
-For each valid pattern entry, from memo_offset downward:
+PATTERN_LIST ENTRY — KH-940 (7 bytes per pattern, up to 98 entries)
+--------------------------------------------------------------------
+  Bytes 0–1: DATA_OFFSET  — Binary 16-bit unsigned reversed-address offset
+                            pointing to the last byte of PatternMEMO.
+                            Reversed address: file_addr = 0x7FFF - DATA_OFFSET
+  Byte 2:    rh:rt        — MSN=rows hundreds, LSN=rows tens  (BCD)
+  Byte 3:    ro:sh        — MSN=rows ones,     LSN=stitches hundreds  (BCD)
+  Byte 4:    st:so        — MSN=stitches tens, LSN=stitches ones  (BCD)
+  Byte 5:    0x0:ph       — MSN=always 0x0, LSN=pattern number hundreds  (BCD)
+  Byte 6:    pt:po        — MSN=pattern number tens, LSN=pattern number ones  (BCD)
 
-  [memo block]    bytesForMemo(rows) bytes     — at memo_offset, grows down
-  [pattern data]  bytesPerPattern(stitches, rows) bytes — immediately below memo
+  Empty/unused slots are filled with 0x55.
+  The entry immediately after the last valid pattern is a FINHDR sentinel:
+    bytes 0–4 = 0x55, byte 5 = 0x0N (ph), byte 6 = pt:po
+    where NNN = next unused pattern number.
 
-NIBBLE AND BYTE GEOMETRY
--------------------------
+CONTROL_DATA block (file addresses 0x7F00–0x7F16)
+--------------------------------------------------
+  +0x00  2  PATTERN_PTR1  — offset of (first byte of last pattern + 1)
+  +0x02  2  UNK1          — write 0x0001
+  +0x04  2  PATTERN_PTR0  — same as PATTERN_PTR1
+  +0x06  2  LAST_BOTTOM   — offset to last byte of last created pattern
+  +0x08  2  UNK2          — write 0x0000
+  +0x0A  2  LAST_TOP      — offset to first byte of last created pattern
+  +0x0C  4  UNK3          — write 0x00008100
+  +0x10  2  HEADER_PTR    — offset to end of pattern header list (= 0x7FF9 after format)
+  +0x12  2  UNK_PTR       — write 0x0000
+  +0x14  3  UNK4          — write 0x000000
+
+LOADED_PATTERN (file address 0x7FEA, 2 bytes)
+----------------------------------------------
+  Byte 0: 0x1N where N = pattern number hundreds (BCD)
+  Byte 1: pt:po pattern number tens:ones (BCD)
+  Write as last created pattern number; after format write 0x1000.
+
+PATTERN DATA LAYOUT (same for both machines)
+--------------------------------------------
+For each valid pattern, layout within the working region (high to low address):
+
+  [PatternMEMO]  bytes_for_memo(rows) bytes     — at memo_offset, grows down
+  [PatternDATA]  bytes_per_pattern(stitches, rows) bytes — immediately below
+
+NIBBLE AND BYTE GEOMETRY (same for both machines)
+-------------------------------------------------
   nibblesPerRow(stitches) = ceil4(stitches) / 4
-      Each row is nibble-aligned: stitch count rounded UP to multiple of 4.
-
   bytesPerPattern(stitches, rows) = ceil2(rows × nibblesPerRow(stitches)) / 2
-      Total nibbles for all rows, rounded UP to whole bytes.
-
   bytesForMemo(rows) = ceil2(rows) / 2
-      One nibble per row, byte-aligned.
 
-NIBBLE ADDRESSING (within a block at base offset `base`)
----------------------------------------------------------
+NIBBLE ADDRESSING (same for both machines)
+------------------------------------------
 Nibbles are numbered 0, 1, 2, ... starting from base and advancing BACKWARD:
-
   nibble N lives in byte at address:  base - (N // 2)
-  within that byte:
-    even N → LSN (bits 3:0)
-    odd  N → MSN (bits 7:4)
+  even N → LSN (bits 3:0);  odd N → MSN (bits 7:4)
 
-STITCH BIT ORDER WITHIN A NIBBLE
-----------------------------------
-  bit 0 (LSB) → stitch 0 (leftmost in the group of 4)
-  bit 1       → stitch 1
-  bit 2       → stitch 2
-  bit 3       → stitch 3 (rightmost in the group of 4)
-
+STITCH BIT ORDER WITHIN A NIBBLE (same for both machines)
+----------------------------------------------------------
+  bit 0 (LSB) → stitch 0 (leftmost); bit 3 (MSB) → stitch 3 (rightmost)
   stitch value 1 = needle selected (knit); 0 = not selected (skip).
 
-ROW ORDER
----------
-Row 0 is the FIRST row knitted (bottom of the physical fabric on most machines,
-but this matches the top of the source image per the insertpattern.py convention).
-Rows are stored sequentially in nibble-space: row 0 occupies nibbles 0..(npr-1),
-row 1 occupies nibbles npr..(2*npr-1), etc.
-
-MEMO BLOCK
-----------
-One nibble per row, same backward nibble addressing, same bit-order within nibble.
-The meaning of memo nibble bits is not fully documented; it appears to encode
-per-row color/selector metadata. Written as zeros for simple two-color patterns.
+ROW ORDER (same for both machines)
+-----------------------------------
+Row 0 is the FIRST row knitted. Rows stored sequentially in nibble-space.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Sequence
 
 # ---------------------------------------------------------------------------
-# Constants
+# Machine model
+# ---------------------------------------------------------------------------
+
+
+class MachineModel(Enum):
+    """Supported Brother knitting machine models."""
+    KH930 = "KH-930"
+    KH940 = "KH-940"
+
+
+# ---------------------------------------------------------------------------
+# Constants — shared
 # ---------------------------------------------------------------------------
 
 SECTOR_SIZE: int = 1024
 NUM_SECTORS: int = 80
 DISK_IMAGE_SIZE: int = NUM_SECTORS * SECTOR_SIZE  # 81,920 bytes
 
-# The first two sectors are the 2,048-byte working region the machine reads.
-WORKING_REGION_SIZE: int = 2 * SECTOR_SIZE  # 2,048 bytes
-
-DIRECTORY_ENTRY_SIZE: int = 7
-MAX_PATTERNS: int = 99
 PATTERN_NUMBER_MIN: int = 901
 PATTERN_NUMBER_MAX: int = 999
 
-# Patterns start here and grow DOWNWARD.
-INIT_PATTERN_OFFSET: int = 0x06DF
+DIRECTORY_ENTRY_SIZE: int = 7
 
-# Well-known addresses within the 2,048-byte working region.
-CURRENT_PATTERN_ADDR: int = 0x07EA
-CURRENT_ROW_ADDR: int = 0x06FF
-NEXT_ROW_ADDR: int = 0x072F
-CURRENT_ROW_NUMBER_ADDR: int = 0x0702
-CARRIAGE_STATUS_ADDR: int = 0x070F
-SELECT_ADDR: int = 0x07EA
+# ---------------------------------------------------------------------------
+# Constants — KH-930
+# ---------------------------------------------------------------------------
+
+KH930_WORKING_REGION_SIZE: int = 2 * SECTOR_SIZE          # 2,048 bytes
+KH930_WORKING_SECTORS: int = 2
+KH930_MAX_PATTERNS: int = 99
+KH930_INIT_PATTERN_OFFSET: int = 0x06DF
+KH930_CURRENT_PATTERN_ADDR: int = 0x07EA
+KH930_CURRENT_ROW_ADDR: int = 0x06FF
+KH930_NEXT_ROW_ADDR: int = 0x072F
+KH930_CURRENT_ROW_NUMBER_ADDR: int = 0x0702
+KH930_CARRIAGE_STATUS_ADDR: int = 0x070F
+KH930_SELECT_ADDR: int = 0x07EA
+
+# ---------------------------------------------------------------------------
+# Constants — KH-940
+# ---------------------------------------------------------------------------
+
+KH940_WORKING_REGION_SIZE: int = 32 * SECTOR_SIZE         # 32,768 bytes
+KH940_WORKING_SECTORS: int = 32
+KH940_MAX_PATTERNS: int = 98
+KH940_INIT_PATTERN_OFFSET: int = 0x7EDF                   # file address
+KH940_LAST_BYTE_ADDR: int = 0x7FFF
+
+# Control data block base address (file address)
+KH940_CONTROL_DATA_ADDR: int = 0x7F00
+KH940_LOADED_PATTERN_ADDR: int = 0x7FEA
+
+# Reversed-address base: offset = KH940_LAST_BYTE_ADDR - file_address
+KH940_REVERSED_BASE: int = KH940_LAST_BYTE_ADDR
+
+# The FINHDR sentinel and unused slots are filled with this value.
+KH940_FILL_BYTE: int = 0x55
+
+# ---------------------------------------------------------------------------
+# Backwards-compatibility aliases (used by existing tests and api.py)
+# These reflect the KH-930 values that the original code used.
+# ---------------------------------------------------------------------------
+
+WORKING_REGION_SIZE: int = KH930_WORKING_REGION_SIZE
+MAX_PATTERNS: int = KH930_MAX_PATTERNS
+INIT_PATTERN_OFFSET: int = KH930_INIT_PATTERN_OFFSET
+CURRENT_PATTERN_ADDR: int = KH930_CURRENT_PATTERN_ADDR
+CURRENT_ROW_ADDR: int = KH930_CURRENT_ROW_ADDR
+NEXT_ROW_ADDR: int = KH930_NEXT_ROW_ADDR
+CURRENT_ROW_NUMBER_ADDR: int = KH930_CURRENT_ROW_NUMBER_ADDR
+CARRIAGE_STATUS_ADDR: int = KH930_CARRIAGE_STATUS_ADDR
+SELECT_ADDR: int = KH930_SELECT_ADDR
 
 
 # ---------------------------------------------------------------------------
@@ -315,10 +393,10 @@ def encode_pattern_data(
     `pixel_rows` is a sequence of rows, each row a sequence of `stitches`
     values (0 or 1).  Row 0 is the first row knitted.
 
-    The returned bytearray uses the same backward nibble addressing as the
-    machine's memory: the first row's nibble 0 is in the LSN of the last byte.
-    Callers should place this block so that its last byte sits at
-    (pattern_offset) in the working region and grows toward lower addresses.
+    The returned bytearray uses backward nibble addressing: the first row's
+    nibble 0 is in the LSN of the last byte.  Callers should place this block
+    so that its last byte sits at pattern_offset in the working region and
+    grows toward lower addresses.
     """
     if len(pixel_rows) != rows:
         raise ValueError(f"Expected {rows} rows, got {len(pixel_rows)}")
@@ -326,11 +404,6 @@ def encode_pattern_data(
     total_nibbles = rows * npr
     total_bytes = _ceil2(total_nibbles) // 2
 
-    # Build the bytearray. We'll use the same nibble-index scheme:
-    # nibble 0 → LSN of byte[total_bytes - 1]  (the "base" byte)
-    # nibble 1 → MSN of byte[total_bytes - 1]
-    # nibble 2 → LSN of byte[total_bytes - 2]
-    # ...
     result = bytearray(total_bytes)
     base = total_bytes - 1  # local base within result
 
@@ -410,38 +483,52 @@ def decode_memo(
 
 
 # ---------------------------------------------------------------------------
-# Directory entry encode / decode
+# Directory entry encode / decode — KH-930
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class PatternEntry:
-    """Metadata for one pattern stored in the Brother directory."""
+    """Metadata for one pattern stored in the Brother directory.
 
-    number: int  # 901–999
+    Compatible with both KH-930 and KH-940; the pointer fields are stored
+    differently on each machine but the computed properties are the same.
+    """
+
+    number: int    # 901–999
     stitches: int  # 1–200
-    rows: int  # 1–999
-    flag: int  # high byte of reversed-address pointer
-    pointer_low: int  # low byte of reversed-address pointer
+    rows: int      # 1–999
+
+    # KH-930: flag = high byte of reversed-address pointer;
+    #         pointer_low = low byte.
+    # KH-940: flag = high byte of 16-bit DATA_OFFSET;
+    #         pointer_low = low byte.
+    # In both cases memo_offset is computed from these two bytes.
+    flag: int
+    pointer_low: int
+
+    # The working region size for this entry's machine (needed for the
+    # reversed-address calculation).
+    _working_region_size: int = field(default=KH930_WORKING_REGION_SIZE, repr=False)
 
     @property
     def memo_offset(self) -> int:
         """
-        Absolute offset of the memo block's base byte within the working region.
+        Absolute file address of the memo block's base byte.
         Computed from the reversed-address pointer:
-          memo_offset = (WORKING_REGION_SIZE - 1) - ((flag << 8) | pointer_low)
+          memo_offset = (working_region_size - 1) - ((flag << 8) | pointer_low)
         """
-        return (WORKING_REGION_SIZE - 1) - ((self.flag << 8) | self.pointer_low)
+        return (self._working_region_size - 1) - ((self.flag << 8) | self.pointer_low)
 
     @property
     def pattern_offset(self) -> int:
-        """Absolute offset of the pattern data's base byte (just below memo)."""
+        """Absolute file address of the pattern data's base byte (just below memo)."""
         return self.memo_offset - bytes_for_memo(self.rows)
 
     @property
     def block_end_offset(self) -> int:
         """
-        Absolute offset of the byte just below the entire pattern+memo block.
+        Absolute file address of the byte just below the entire pattern+memo block.
         The next pattern's memo_offset will be at or above this address.
         """
         return self.memo_offset - bytes_per_pattern_and_memo(self.stitches, self.rows)
@@ -456,11 +543,11 @@ def encode_directory_entry(
     data_length: int,
 ) -> tuple[int, bytes]:
     """
-    Encode one 7-byte directory entry.
+    Encode one 7-byte KH-930 directory entry.
 
     `slot_index` is 0-based (0 = first pattern slot, bytes 0–6 of the file).
     `memo_offset` is the absolute byte offset of this pattern's memo base.
-    `data_length` is len(working_region) = WORKING_REGION_SIZE.
+    `data_length` is len(working_region) = WORKING_REGION_SIZE (KH-930: 2,048).
 
     Returns (byte_offset_in_file, 7_bytes).
     """
@@ -501,12 +588,12 @@ def encode_directory_entry(
 
 def decode_directory_entry(raw: bytes | bytearray) -> PatternEntry | None:
     """
-    Decode a 7-byte directory entry.
+    Decode a 7-byte KH-930 directory entry.
     Returns None if the slot is empty (flag == 0).
     """
     if len(raw) < DIRECTORY_ENTRY_SIZE:
         raise ValueError(
-            f"Directory entry must be {DIRECTORY_ENTRY_SIZE} bytes, " f"got {len(raw)}"
+            f"Directory entry must be {DIRECTORY_ENTRY_SIZE} bytes, got {len(raw)}"
         )
     flag = raw[0]
     if flag == 0:
@@ -533,104 +620,420 @@ def decode_directory_entry(raw: bytes | bytearray) -> PatternEntry | None:
         rows=rows,
         flag=flag,
         pointer_low=ptr_low,
+        _working_region_size=KH930_WORKING_REGION_SIZE,
     )
 
 
 # ---------------------------------------------------------------------------
-# DiskImage — the top-level object
+# Directory entry encode / decode — KH-940
+# ---------------------------------------------------------------------------
+
+
+def encode_directory_entry_940(
+    slot_index: int,
+    number: int,
+    stitches: int,
+    rows: int,
+    memo_offset: int,
+) -> tuple[int, bytes]:
+    """
+    Encode one 7-byte KH-940 pattern list entry.
+
+    `memo_offset` is the absolute file address of this pattern's memo base.
+    DATA_OFFSET field = KH940_REVERSED_BASE - memo_offset (16-bit binary).
+
+    Returns (byte_offset_in_file, 7_bytes).
+    """
+    if not (PATTERN_NUMBER_MIN <= number <= PATTERN_NUMBER_MAX):
+        raise ValueError(
+            f"Pattern number {number} out of range "
+            f"{PATTERN_NUMBER_MIN}–{PATTERN_NUMBER_MAX}"
+        )
+    if not (1 <= stitches <= 200):
+        raise ValueError(f"Stitch count {stitches} out of range 1–200")
+    if not (1 <= rows <= 999):
+        raise ValueError(f"Row count {rows} out of range 1–999")
+
+    data_offset = KH940_REVERSED_BASE - memo_offset
+    flag = (data_offset >> 8) & 0xFF
+    ptr_low = data_offset & 0xFF
+
+    rh, rt, ro = _bcd_encode_3digit(rows)
+    sh, st, so = _bcd_encode_3digit(stitches)
+    ph, pt, po = _bcd_encode_3digit(number)
+
+    entry = bytes(
+        [
+            flag,
+            ptr_low,
+            (rh << 4) | rt,
+            (ro << 4) | sh,
+            (st << 4) | so,
+            (0x0 << 4) | ph,  # upper nibble always 0
+            (pt << 4) | po,
+        ]
+    )
+
+    byte_offset = slot_index * DIRECTORY_ENTRY_SIZE
+    return byte_offset, entry
+
+
+def decode_directory_entry_940(raw: bytes | bytearray) -> PatternEntry | None:
+    """
+    Decode a 7-byte KH-940 pattern list entry.
+
+    Returns None if the slot is empty (first byte == KH940_FILL_BYTE == 0x55)
+    or if this looks like the FINHDR sentinel (bytes 0–4 are all 0x55).
+    """
+    if len(raw) < DIRECTORY_ENTRY_SIZE:
+        raise ValueError(
+            f"Directory entry must be {DIRECTORY_ENTRY_SIZE} bytes, got {len(raw)}"
+        )
+
+    # Empty / FINHDR / unused: first byte is 0x55
+    if raw[0] == KH940_FILL_BYTE:
+        return None
+
+    flag = raw[0]
+    ptr_low = raw[1]
+    rh = (raw[2] & 0xF0) >> 4
+    rt = raw[2] & 0x0F
+    ro = (raw[3] & 0xF0) >> 4
+    sh = raw[3] & 0x0F
+    st = (raw[4] & 0xF0) >> 4
+    so = raw[4] & 0x0F
+    ph = raw[5] & 0x0F  # upper nibble always 0
+    pt = (raw[6] & 0xF0) >> 4
+    po = raw[6] & 0x0F
+
+    rows = _bcd_decode_3digit(rh, rt, ro)
+    stitches = _bcd_decode_3digit(sh, st, so)
+    number = _bcd_decode_3digit(ph, pt, po)
+
+    return PatternEntry(
+        number=number,
+        stitches=stitches,
+        rows=rows,
+        flag=flag,
+        pointer_low=ptr_low,
+        _working_region_size=KH940_WORKING_REGION_SIZE,
+    )
+
+
+def _encode_finhdr_940(slot_index: int, next_number: int) -> tuple[int, bytes]:
+    """
+    Encode the FINHDR sentinel entry for the KH-940 pattern list.
+
+    The FINHDR marks the end of the pattern list.  Bytes 0–4 = 0x55;
+    bytes 5–6 encode the next unused pattern number in BCD.
+    """
+    ph, pt, po = _bcd_encode_3digit(next_number)
+    entry = bytes(
+        [
+            KH940_FILL_BYTE,   # 0
+            KH940_FILL_BYTE,   # 1
+            KH940_FILL_BYTE,   # 2
+            KH940_FILL_BYTE,   # 3
+            KH940_FILL_BYTE,   # 4
+            (0x0 << 4) | ph,   # 5  XX=0, hundreds
+            (pt << 4) | po,    # 6  tens, ones
+        ]
+    )
+    return slot_index * DIRECTORY_ENTRY_SIZE, entry
+
+
+# ---------------------------------------------------------------------------
+# DiskImage — top-level object, supports both KH-930 and KH-940
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class DiskImage:
     """
-    An in-memory representation of a Brother KH-930/940 disk image.
+    An in-memory representation of a Brother knitting machine disk image.
 
-    The full image is DISK_IMAGE_SIZE (81,920) bytes, but only the first two
-    sectors (the "working region", 2,048 bytes) contain pattern data.  The
-    remaining 78 sectors are populated when writing to disk but are not
-    significant for pattern content.
+    Supports both the KH-930 (2 KB working region) and KH-940 (32 KB working
+    region) formats.  The default model is KH-940.
+
+    The full disk image is always DISK_IMAGE_SIZE (81,920) bytes when
+    serialised; the working region occupies the first N sectors.
 
     Usage::
 
-        img = DiskImage.blank()
+        img = DiskImage.blank()                   # KH-940 (default)
+        img = DiskImage.blank(MachineModel.KH930) # KH-930
         img.write_pattern(901, pixel_rows)
-        track_files = img.to_track_files()
+        raw = img.to_disk_image_bytes()
 
     """
 
-    # The full 2,048-byte working region.
-    _data: bytearray = field(default_factory=lambda: bytearray(WORKING_REGION_SIZE))
+    model: MachineModel = field(default=MachineModel.KH940)
 
-    # Next available offset for pattern data (starts at INIT_PATTERN_OFFSET,
+    # Full working region as a mutable bytearray.
+    _data: bytearray = field(init=False)
+
+    # Next available file address for pattern data (starts at INIT_PATTERN_OFFSET,
     # decrements as patterns are added).
-    _next_pattern_ptr: int = field(default=INIT_PATTERN_OFFSET)
+    _next_pattern_ptr: int = field(init=False)
 
     # Slot index for the next directory entry (0-based).
-    _next_slot: int = field(default=0)
+    _next_slot: int = field(init=False)
 
-    # ---------------------------------------------------------------------------
+    def __post_init__(self) -> None:
+        size = self._working_region_size
+        if self.model == MachineModel.KH940:
+            # KH-940: fill unused areas with 0x55 per spec, then zero out
+            # the areas that must be 0x00.
+            self._data = bytearray([KH940_FILL_BYTE] * size)
+            self._zero_940_regions()
+        else:
+            self._data = bytearray(size)
+        self._next_pattern_ptr = self._init_pattern_offset
+        self._next_slot = 0
+
+    # ------------------------------------------------------------------
+    # Properties derived from model
+    # ------------------------------------------------------------------
+
+    @property
+    def _working_region_size(self) -> int:
+        return (
+            KH940_WORKING_REGION_SIZE
+            if self.model == MachineModel.KH940
+            else KH930_WORKING_REGION_SIZE
+        )
+
+    @property
+    def _working_sectors(self) -> int:
+        return (
+            KH940_WORKING_SECTORS
+            if self.model == MachineModel.KH940
+            else KH930_WORKING_SECTORS
+        )
+
+    @property
+    def _max_patterns(self) -> int:
+        return (
+            KH940_MAX_PATTERNS
+            if self.model == MachineModel.KH940
+            else KH930_MAX_PATTERNS
+        )
+
+    @property
+    def _init_pattern_offset(self) -> int:
+        return (
+            KH940_INIT_PATTERN_OFFSET
+            if self.model == MachineModel.KH940
+            else KH930_INIT_PATTERN_OFFSET
+        )
+
+    # ------------------------------------------------------------------
     # Construction
-    # ---------------------------------------------------------------------------
+    # ------------------------------------------------------------------
 
     @classmethod
-    def blank(cls) -> "DiskImage":
+    def blank(cls, model: MachineModel = MachineModel.KH940) -> "DiskImage":
         """
         Create a blank disk image with an empty pattern directory.
-        All bytes are initialised to 0x00.
+
+        Parameters
+        ----------
+        model:
+            The target machine model.  Defaults to KH-940.
         """
-        return cls()
+        return cls(model=model)
 
     @classmethod
-    def from_bytes(cls, data: bytes | bytearray) -> "DiskImage":
+    def from_bytes(
+        cls,
+        data: bytes | bytearray,
+        model: MachineModel = MachineModel.KH940,
+    ) -> "DiskImage":
         """
-        Load a DiskImage from an existing working-region blob (2,048 bytes)
-        or full disk image (81,920 bytes).  Only the first 2,048 bytes are
-        used for pattern data.
+        Load a DiskImage from an existing working-region blob or full disk image.
+
+        Parameters
+        ----------
+        data:
+            Working-region bytes (≥ working_region_size) or full disk image
+            (81,920 bytes).  Only the first working_region_size bytes are used.
+        model:
+            The target machine model.  Defaults to KH-940.
         """
-        if len(data) < WORKING_REGION_SIZE:
+        size = (
+            KH940_WORKING_REGION_SIZE
+            if model == MachineModel.KH940
+            else KH930_WORKING_REGION_SIZE
+        )
+        if len(data) < size:
             raise ValueError(
-                f"Data too short: need at least {WORKING_REGION_SIZE} bytes, "
+                f"Data too short for {model.value}: need at least {size} bytes, "
                 f"got {len(data)}"
             )
-        working = bytearray(data[:WORKING_REGION_SIZE])
-        img = cls(_data=working)
+        img = cls(model=model)
+        img._data = bytearray(data[:size])
         img._sync_state_from_directory()
         return img
+
+    def _zero_940_regions(self) -> None:
+        """Zero out the KH-940 regions that must be 0x00 (not 0x55)."""
+        # PATTERN_LIST directory area: 0x0000–0x02AD (filled with 0x55 is
+        # correct for unused slots; we zero only the structural fields lazily
+        # as patterns are written).  The fill byte for the directory is 0x55,
+        # which __post_init__ already set, so nothing to do here.
+
+        # AREA1: 0x7EE7–0x7EFF — write 0x00
+        self._data[0x7EE7:0x7F00] = bytes(0x7F00 - 0x7EE7)
+
+        # CONTROL_DATA: 0x7F00–0x7F16 — initialise fully below
+        self._write_940_control_data(
+            next_ptr=KH940_INIT_PATTERN_OFFSET + 1,
+            last_bottom=KH940_INIT_PATTERN_OFFSET,
+            last_top=KH940_INIT_PATTERN_OFFSET,
+            last_number=901,
+        )
+
+        # AREA2: 0x7F17–0x7F2F — write 0x00
+        self._data[0x7F17:0x7F30] = bytes(0x7F30 - 0x7F17)
+
+        # AREA3: 0x7F30–0x7FE9 — write 0x00
+        self._data[0x7F30:0x7FEA] = bytes(0x7FEA - 0x7F30)
+
+        # LOADED_PATTERN: 0x7FEA–0x7FEB — default after format = 0x1000
+        self._data[0x7FEA] = 0x10
+        self._data[0x7FEB] = 0x00
+
+        # AREA4: 0x7FEC–0x7FFE — write 0x00
+        self._data[0x7FEC:0x7FFF] = bytes(0x7FFF - 0x7FEC)
+
+        # LAST_BYTE: 0x7FFF = 0x02
+        self._data[0x7FFF] = 0x02
+
+    def _write_940_control_data(
+        self,
+        next_ptr: int,
+        last_bottom: int,
+        last_top: int,
+        last_number: int,
+    ) -> None:
+        """
+        Write the KH-940 CONTROL_DATA block at file address 0x7F00.
+
+        Parameters
+        ----------
+        next_ptr:
+            Reversed-address offset of (first byte of last pattern + 1).
+            = KH940_REVERSED_BASE - (first_byte_of_last_pattern - 1)
+        last_bottom:
+            Reversed-address offset of the last byte of the last pattern.
+            = KH940_REVERSED_BASE - memo_offset_of_last_pattern
+        last_top:
+            Reversed-address offset of the first byte of the last pattern.
+            = KH940_REVERSED_BASE - (pat_start of last pattern)
+        last_number:
+            Pattern number of the last created pattern (901–999).
+        """
+        base = KH940_CONTROL_DATA_ADDR
+
+        def _write16(offset: int, value: int) -> None:
+            self._data[base + offset] = (value >> 8) & 0xFF
+            self._data[base + offset + 1] = value & 0xFF
+
+        _write16(0x00, next_ptr)       # PATTERN_PTR1
+        _write16(0x02, 0x0001)         # UNK1
+        _write16(0x04, next_ptr)       # PATTERN_PTR0
+        _write16(0x06, last_bottom)    # LAST_BOTTOM
+        _write16(0x08, 0x0000)         # UNK2
+        _write16(0x0A, last_top)       # LAST_TOP
+        # UNK3: 4 bytes = 0x00008100
+        self._data[base + 0x0C] = 0x00
+        self._data[base + 0x0D] = 0x00
+        self._data[base + 0x0E] = 0x81
+        self._data[base + 0x0F] = 0x00
+        _write16(0x10, 0x7FF9)         # HEADER_PTR (default; updated after writes)
+        _write16(0x12, 0x0000)         # UNK_PTR
+        self._data[base + 0x14] = 0x00
+        self._data[base + 0x15] = 0x00
+        self._data[base + 0x16] = 0x00  # UNK4
+
+        # LOADED_PATTERN at 0x7FEA
+        ph, pt, po = _bcd_encode_3digit(last_number)
+        self._data[KH940_LOADED_PATTERN_ADDR] = (0x1 << 4) | ph
+        self._data[KH940_LOADED_PATTERN_ADDR + 1] = (pt << 4) | po
+
+    def _update_940_metadata(self) -> None:
+        """
+        Refresh the KH-940 CONTROL_DATA and LOADED_PATTERN after a write.
+        Called at the end of write_pattern() for KH-940.
+        """
+        entries = self.list_patterns()
+        if not entries:
+            return
+        last = entries[-1]
+
+        # Reversed-address offsets
+        memo_rev = KH940_REVERSED_BASE - last.memo_offset
+        pat_rev = KH940_REVERSED_BASE - last.pattern_offset
+        # "first byte of last pattern" in reversed space
+        pat_end_rev = KH940_REVERSED_BASE - last.block_end_offset
+        next_ptr = pat_end_rev + 1  # offset just past the whole block
+
+        # HEADER_PTR = reversed address of (end of last valid directory slot)
+        header_ptr = KH940_REVERSED_BASE - (
+            (self._next_slot) * DIRECTORY_ENTRY_SIZE - 1
+        )
+
+        self._write_940_control_data(
+            next_ptr=next_ptr,
+            last_bottom=memo_rev,
+            last_top=pat_rev,
+            last_number=last.number,
+        )
+
+        # Write HEADER_PTR separately (it differs from defaults)
+        base = KH940_CONTROL_DATA_ADDR
+        self._data[base + 0x10] = (header_ptr >> 8) & 0xFF
+        self._data[base + 0x11] = header_ptr & 0xFF
 
     def _sync_state_from_directory(self) -> None:
         """
         After loading from bytes, scan the directory to find the current
-        _next_slot and _next_pattern_ptr so that new patterns can be appended
-        correctly.
+        _next_slot and _next_pattern_ptr so that new patterns can be appended.
         """
-        for slot in range(MAX_PATTERNS):
+        decode_fn = (
+            decode_directory_entry_940
+            if self.model == MachineModel.KH940
+            else decode_directory_entry
+        )
+        for slot in range(self._max_patterns):
             raw = self._data[
                 slot * DIRECTORY_ENTRY_SIZE : (slot + 1) * DIRECTORY_ENTRY_SIZE
             ]
-            entry = decode_directory_entry(raw)
+            entry = decode_fn(raw)
             if entry is None:
                 self._next_slot = slot
-                # _next_pattern_ptr is the address just below the last pattern's block.
-                # If no patterns exist yet, use INIT_PATTERN_OFFSET.
                 break
             self._next_pattern_ptr = entry.block_end_offset
         else:
-            # All 99 slots are filled.
-            self._next_slot = MAX_PATTERNS
+            self._next_slot = self._max_patterns
 
-    # ---------------------------------------------------------------------------
+    # ------------------------------------------------------------------
     # Reading
-    # ---------------------------------------------------------------------------
+    # ------------------------------------------------------------------
 
     def list_patterns(self) -> list[PatternEntry]:
         """Return a list of all valid PatternEntry objects in the directory."""
+        decode_fn = (
+            decode_directory_entry_940
+            if self.model == MachineModel.KH940
+            else decode_directory_entry
+        )
         entries: list[PatternEntry] = []
-        for slot in range(MAX_PATTERNS):
+        for slot in range(self._max_patterns):
             raw = self._data[
                 slot * DIRECTORY_ENTRY_SIZE : (slot + 1) * DIRECTORY_ENTRY_SIZE
             ]
-            entry = decode_directory_entry(raw)
+            entry = decode_fn(raw)
             if entry is None:
                 break
             entries.append(entry)
@@ -669,9 +1072,9 @@ class DiskImage:
             raise KeyError(f"Pattern {number} not found in disk image")
         return decode_memo(self._data, entry.memo_offset, entry.rows)
 
-    # ---------------------------------------------------------------------------
+    # ------------------------------------------------------------------
     # Writing
-    # ---------------------------------------------------------------------------
+    # ------------------------------------------------------------------
 
     def write_pattern(
         self,
@@ -693,8 +1096,10 @@ class DiskImage:
         Returns the PatternEntry that was written.
         Raises ValueError if the image is full or the pattern number is taken.
         """
-        if self._next_slot >= MAX_PATTERNS:
-            raise ValueError("Disk image is full (99 patterns already stored)")
+        if self._next_slot >= self._max_patterns:
+            raise ValueError(
+                f"Disk image is full ({self._max_patterns} patterns already stored)"
+            )
         if self.get_pattern_entry(number) is not None:
             raise ValueError(f"Pattern {number} already exists in this disk image")
 
@@ -740,46 +1145,71 @@ class DiskImage:
         self._data[pat_start : pattern_offset + 1] = pat_bytes
 
         # --- Write directory entry ---
-        dir_offset, dir_bytes = encode_directory_entry(
-            slot_index=self._next_slot,
-            number=number,
-            stitches=stitches,
-            rows=rows,
-            memo_offset=memo_offset,
-            data_length=WORKING_REGION_SIZE,
-        )
+        if self.model == MachineModel.KH940:
+            dir_offset, dir_bytes = encode_directory_entry_940(
+                slot_index=self._next_slot,
+                number=number,
+                stitches=stitches,
+                rows=rows,
+                memo_offset=memo_offset,
+            )
+        else:
+            dir_offset, dir_bytes = encode_directory_entry(
+                slot_index=self._next_slot,
+                number=number,
+                stitches=stitches,
+                rows=rows,
+                memo_offset=memo_offset,
+                data_length=self._working_region_size,
+            )
         self._data[dir_offset : dir_offset + DIRECTORY_ENTRY_SIZE] = dir_bytes
 
         # --- Advance cursors ---
         self._next_pattern_ptr -= total
         self._next_slot += 1
 
-        # Decode the entry we just wrote and return it for confirmation.
-        return decode_directory_entry(
-            self._data[dir_offset : dir_offset + DIRECTORY_ENTRY_SIZE]
-        )  # type: ignore[return-value]
+        # --- KH-940: update FINHDR and control/metadata blocks ---
+        if self.model == MachineModel.KH940:
+            next_number = min(number + 1, PATTERN_NUMBER_MAX)
+            finhdr_offset, finhdr_bytes = _encode_finhdr_940(
+                self._next_slot, next_number
+            )
+            self._data[finhdr_offset : finhdr_offset + DIRECTORY_ENTRY_SIZE] = (
+                finhdr_bytes
+            )
+            self._update_940_metadata()
 
-    # ---------------------------------------------------------------------------
+        # Decode the entry we just wrote and return it for confirmation.
+        if self.model == MachineModel.KH940:
+            return decode_directory_entry_940(
+                self._data[dir_offset : dir_offset + DIRECTORY_ENTRY_SIZE]
+            )  # type: ignore[return-value]
+        else:
+            return decode_directory_entry(
+                self._data[dir_offset : dir_offset + DIRECTORY_ENTRY_SIZE]
+            )  # type: ignore[return-value]
+
+    # ------------------------------------------------------------------
     # Serialisation
-    # ---------------------------------------------------------------------------
+    # ------------------------------------------------------------------
 
     def working_region_bytes(self) -> bytes:
-        """Return the 2,048-byte working region as an immutable bytes object."""
+        """Return the working region as an immutable bytes object."""
         return bytes(self._data)
 
     def to_sector_files(self) -> dict[int, bytes]:
         """
         Return the full disk image as a dict mapping sector number (0–79) to
-        1,024-byte sector data.  Sectors 0 and 1 contain the working region;
-        sectors 2–79 are zero-padded.
+        1,024-byte sector data.  The first _working_sectors sectors contain the
+        working region; the remainder are zero-padded.
 
-        This is what PDDemulate expects: sector N → file ``NN.dat``.
+        This is what PDDEmulator expects: sector N → file ``NN.dat``.
         """
         sectors: dict[int, bytes] = {}
         working = bytes(self._data)
-        sectors[0] = working[:SECTOR_SIZE]
-        sectors[1] = working[SECTOR_SIZE:WORKING_REGION_SIZE]
-        for n in range(2, NUM_SECTORS):
+        for n in range(self._working_sectors):
+            sectors[n] = working[n * SECTOR_SIZE : (n + 1) * SECTOR_SIZE]
+        for n in range(self._working_sectors, NUM_SECTORS):
             sectors[n] = bytes(SECTOR_SIZE)
         return sectors
 
@@ -791,15 +1221,15 @@ class DiskImage:
         sectors = self.to_sector_files()
         return b"".join(sectors[n] for n in range(NUM_SECTORS))
 
-    # ---------------------------------------------------------------------------
+    # ------------------------------------------------------------------
     # Convenience
-    # ---------------------------------------------------------------------------
+    # ------------------------------------------------------------------
 
     def __repr__(self) -> str:
         patterns = self.list_patterns()
         nums = [e.number for e in patterns]
         return (
-            f"DiskImage(patterns={nums}, "
-            f"slots_used={self._next_slot}/{MAX_PATTERNS}, "
+            f"DiskImage(model={self.model.value}, patterns={nums}, "
+            f"slots_used={self._next_slot}/{self._max_patterns}, "
             f"bytes_remaining={self._next_pattern_ptr})"
         )
