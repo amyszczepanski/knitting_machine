@@ -25,6 +25,7 @@ dev = [
     "flake8>=7.3.0",
     "mypy>=1.19.1",
     "types-pyserial>=3.5.0.20260408",
+    "pytest>=8.0",
 ]
 
 [tool.black]
