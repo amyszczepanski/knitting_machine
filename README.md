@@ -2,7 +2,7 @@
 
 > **Work in progress** — this project is under active development and is not yet production-ready. Use with caution.
 
-This project allows a computer to emulate the external floppy disk drive used by Brother KH-930E knitting machines (and similar models), communicating over a serial cable. Since these drives are rare, expensive, and use a physical disk format incompatible with standard PC drives, software emulation is a practical alternative.
+This project allows a computer to emulate the external floppy disk drive used by Brother KH-930/940 knitting machines (and similar models), communicating over a serial cable. Since these drives are rare, expensive, and use a physical disk format incompatible with standard PC drives, software emulation is a practical alternative.
 
 The emulator presents itself to the knitting machine as a floppy drive, enabling saving and restoring of pattern data. Most of the saved data file format has been reverse-engineered, and the tools used in that process are also included here.
 

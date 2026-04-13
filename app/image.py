@@ -1,5 +1,5 @@
 """
-app/image.py — Image loading and preprocessing for the Brother KH-930E.
+app/image.py — Image loading and preprocessing for the Brother KH-930/940.
 
 Loads a 1-bit (or any) image via Pillow, scales/crops to fit within
 MAX_NEEDLES (200) columns, converts to 1-bit, and returns a list of

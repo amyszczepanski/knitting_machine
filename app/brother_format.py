@@ -1,5 +1,5 @@
 """
-brother_format.py — Brother KH-930E disk image format encoder/decoder.
+brother_format.py — Brother KH-930/940 disk image format encoder/decoder.
 
 Binary format reference (reverse-engineered by Steve Conklin, Travis Goodspeed,
 and others; documented in https://github.com/stg/knittington/blob/master/doc/kh940_format.txt).
@@ -544,7 +544,7 @@ def decode_directory_entry(raw: bytes | bytearray) -> PatternEntry | None:
 @dataclass
 class DiskImage:
     """
-    An in-memory representation of a Brother KH-930E disk image.
+    An in-memory representation of a Brother KH-930/940 disk image.
 
     The full image is DISK_IMAGE_SIZE (81,920) bytes, but only the first two
     sectors (the "working region", 2,048 bytes) contain pattern data.  The

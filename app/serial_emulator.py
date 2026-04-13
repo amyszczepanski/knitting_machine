@@ -1,7 +1,7 @@
 """
-serial_emulator.py — Tandy PDD1 floppy-drive emulator for the Brother KH-930E.
+serial_emulator.py — Tandy PDD1 floppy-drive emulator for the Brother KH-930/940.
 
-The Brother KH-930E saves and loads patterns via a Tandy PDD1 external floppy
+The Brother KH-930/940 saves and loads patterns via a Tandy PDD1 external floppy
 drive connected over a serial cable.  This module emulates that drive, letting
 a computer stand in for the hardware.
 
@@ -321,7 +321,7 @@ class _SerialIO:
 
 class PDDEmulator:
     """
-    Tandy PDD1 floppy-drive emulator for the Brother KH-930E knitting machine.
+    Tandy PDD1 floppy-drive emulator for the Brother KH-930/940 knitting machine.
 
     Parameters
     ----------
@@ -632,7 +632,7 @@ def main() -> None:
     )
 
     parser = argparse.ArgumentParser(
-        description="Brother KH-930E floppy drive emulator (Tandy PDD1)"
+        description="Brother KH-930/940 floppy drive emulator (Tandy PDD1)"
     )
     parser.add_argument(
         "disk_dir", help="Directory for sector files (created if absent)"

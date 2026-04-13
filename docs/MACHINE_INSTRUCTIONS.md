@@ -1,14 +1,14 @@
-# Using the Knitting Machine Tool — KH-930E Instructions
+# Using the Knitting Machine Tool — KH-930/940 Instructions
 
 These instructions cover the physical steps you need to perform on the
-Brother KH-930E while using this tool. The software side (uploading an
+Brother KH-930/940 while using this tool. The software side (uploading an
 image, adjusting the threshold, clicking Send) is covered in the UI itself.
 
 ---
 
 ## Before you begin
 
-1. **Turn the KH-930E power switch OFF** before connecting the USB-to-serial
+1. **Turn the KH-930/940 power switch OFF** before connecting the USB-to-serial
    cable. The receptacle is on the back of the machine toward the right.
 2. Plug in the cable with the key matching the notch in the receptacle.
    Make sure the connector is centered horizontally, covering all 8 pins.
@@ -27,7 +27,7 @@ image, adjusting the threshold, clicking Send) is covered in the UI itself.
 
 ### On the machine
 
-4. Enter the following key sequence on the KH-930E keypad:
+4. Enter the following key sequence on the KH-930/940 keypad:
 
    ```
    CE  551  STEP  1  STEP
@@ -39,7 +39,7 @@ image, adjusting the threshold, clicking Send) is covered in the UI itself.
 
 5. The machine will begin reading from the tool. This takes **a few seconds**
    on the KH-930 — the machine holds only about 2 KB of pattern memory
-   (~13,000 stitches), so transfer is fast.
+   (~13,000 stitches), so transfer is fast. It will take longer on the KH-940.
 
 6. When the transfer is complete, the machine will **beep** and show the
    green **READY** light with **1** in the display (row 1).
@@ -111,7 +111,7 @@ When you are approaching the end of a track:
 
 - It is safe to unplug the USB end of the cable from the computer at any
   time **except during an active transfer**.
-- Before unplugging the cable from the **machine** side, turn the KH-930E
+- Before unplugging the cable from the **machine** side, turn the KH-930/940
   off first, as instructed in the Brother manual for the FB-100 drive.
 - The machine retains its loaded pattern after power-off. You can turn it
   off and resume later without re-sending.
