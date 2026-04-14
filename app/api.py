@@ -27,16 +27,27 @@ GET /preview
 
 All state (disk image, emulator thread) lives in app-level singletons so
 that a single `uvicorn app.api:app` process holds the machine state.
+
+Logging
+-------
+Hardware-interaction events are logged to logs/knitting_machine.log
+(rotating, 5 MB × 3 backups) and mirrored to stderr.  The logger name
+is "knitting_machine".  Set the LOG_LEVEL environment variable to
+override the default level (INFO).
 """
 
 from __future__ import annotations
 
 import base64
 import io
+import logging
+import logging.handlers
+import os
 import threading
 import uuid
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -47,6 +58,36 @@ from pydantic import BaseModel
 
 from app.brother_format import DiskImage, MachineModel
 from app.image import ImageError, load_image
+
+# ---------------------------------------------------------------------------
+# Logging setup
+# ---------------------------------------------------------------------------
+
+_LOG_DIR = Path("logs")
+_LOG_DIR.mkdir(exist_ok=True)
+
+_LOG_FILE = _LOG_DIR / "knitting_machine.log"
+_LOG_FORMAT = "%(asctime)s  %(levelname)-8s  %(threadName)s  %(message)s"
+_LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+_log_level = getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO)
+
+_file_handler = logging.handlers.RotatingFileHandler(
+    _LOG_FILE,
+    maxBytes=5 * 1024 * 1024,  # 5 MB
+    backupCount=3,
+    encoding="utf-8",
+)
+_file_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATE_FORMAT))
+
+_stderr_handler = logging.StreamHandler()
+_stderr_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATE_FORMAT))
+
+log = logging.getLogger("knitting_machine")
+log.setLevel(_log_level)
+log.addHandler(_file_handler)
+log.addHandler(_stderr_handler)
+log.propagate = False  # don't double-log via the root logger
 
 # ---------------------------------------------------------------------------
 # Application & CORS
@@ -182,27 +223,66 @@ def _render_preview_png(pixel_rows: list[list[int]]) -> bytes:
 
 
 def _run_send(task_id: str, disk_image_bytes: bytes) -> None:
-    """Background thread: load disk image into the emulator and serve it."""
+    """Background thread: load disk image into the emulator and serve it.
+
+    This function contains all direct hardware interaction and is the
+    primary target for operational logging.  Every major step is logged
+    at INFO so that a post-mortem of the log file can pinpoint exactly
+    how far a transfer got before failing.
+    """
     task = _state.tasks[task_id]
     task.status = _TaskStatus.RUNNING
+
+    port = _state.serial_port
+    baud = _state.baud_rate
+    image_size = len(disk_image_bytes)
+
+    log.info(
+        "Send task %s started — port=%s  baud=%d  image=%d bytes",
+        task_id,
+        port,
+        baud,
+        image_size,
+    )
+
     try:
-        # Import here so serial is only required when actually sending
-        from app.serial_emulator import PDDEmulator
+        # ---- step 1: import serial emulator --------------------------------
+        # Done here (not at module level) so that pyserial is only required
+        # when actually sending.
+        log.info("[%s] Importing serial emulator", task_id)
+        from app.serial_emulator import PDDEmulator  # noqa: PLC0415
+        import tempfile  # noqa: PLC0415
 
-        import tempfile
-
+        # ---- step 2: create emulator and load disk image -------------------
+        log.info("[%s] Creating PDDEmulator and loading disk image", task_id)
         with tempfile.TemporaryDirectory() as tmpdir:
             emulator = PDDEmulator(disk_dir=tmpdir)
             emulator.load_disk_image(disk_image_bytes)
-            # run() is blocking; the machine will read then the user stops it
-            # For MVP we run until stop() is called externally.
-            # The task is marked DONE only after run() returns.
-            emulator.run(port=_state.serial_port, baudrate=_state.baud_rate)
+            log.info(
+                "[%s] Disk image loaded into emulator (%d bytes)", task_id, image_size
+            )
+
+            # ---- step 3: open serial port and begin serving ----------------
+            log.info(
+                "[%s] Opening serial port %s at %d baud — waiting for machine",
+                task_id,
+                port,
+                baud,
+            )
+            emulator.run(port=port, baudrate=baud)
+            # run() is blocking until the machine finishes reading or the
+            # user calls stop().  Reaching this line means it returned cleanly.
+            log.info("[%s] emulator.run() returned — transfer complete", task_id)
 
         task.status = _TaskStatus.DONE
+        log.info("[%s] Send task finished successfully", task_id)
+
     except Exception as exc:
         task.status = _TaskStatus.ERROR
         task.error = str(exc)
+        # exc_info=True attaches the full traceback to the log record so the
+        # exact line inside the emulator (or pyserial) that failed is visible.
+        log.error("[%s] Send task failed: %s", task_id, exc, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -327,6 +407,14 @@ def send_to_machine() -> SendResponse:
     _state.tasks[task_id] = _TaskState()
 
     disk_bytes = _state.disk.to_disk_image_bytes()
+
+    log.info(
+        "Queuing send task %s — %d pattern(s) in disk image, port=%s",
+        task_id,
+        sum(1 for n in range(901, 1000) if _state.disk.read_pattern(n)),
+        _state.serial_port,
+    )
+
     thread = threading.Thread(
         target=_run_send,
         args=(task_id, disk_bytes),
@@ -362,12 +450,18 @@ def get_config() -> ConfigResponse:
 
 @app.put("/config", response_model=ConfigResponse)
 def update_config(req: ConfigRequest) -> ConfigResponse:
+    changes: list[str] = []
     if req.serial_port is not None:
+        changes.append(f"serial_port={req.serial_port!r}")
         _state.serial_port = req.serial_port
     if req.baud_rate is not None:
+        changes.append(f"baud_rate={req.baud_rate}")
         _state.baud_rate = req.baud_rate
     if req.disk_dir is not None:
+        changes.append(f"disk_dir={req.disk_dir!r}")
         _state.disk_dir = req.disk_dir
+    if changes:
+        log.info("Configuration updated: %s", ", ".join(changes))
     return get_config()
 
 
@@ -375,4 +469,5 @@ def update_config(req: ConfigRequest) -> ConfigResponse:
 def reset_disk() -> dict[str, str]:
     """Wipe the in-memory disk image back to blank."""
     _state.disk = DiskImage.blank(_state.model)
+    log.info("Disk image reset to blank")
     return {"status": "ok", "detail": "Disk image reset to blank."}
