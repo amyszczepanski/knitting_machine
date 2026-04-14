@@ -430,17 +430,23 @@ class TestLoadDiskImage:
         """
         Full pipeline: DiskImage → load_disk_image → read sectors back
         → DiskImage.from_bytes → read_pattern.
+
+        Uses KH-940 (the default model), which has a 32-sector working region,
+        so we reassemble all 32 sectors to reconstruct the working region.
         """
         original_pat = [[1, 0, 1, 0], [0, 1, 0, 1], [1, 1, 0, 0]]
-        img = bf.DiskImage.blank()
+        img = bf.DiskImage.blank()  # KH-940 by default
         img.write_pattern(901, original_pat)
         raw = img.to_disk_image_bytes()
 
         emu = se.PDDEmulator(tmp_path / "disk")
         emu.load_disk_image(raw)
 
-        # Reconstruct working region from the emulator's sector files
-        s0 = emu._disk.read_sector(0)
-        s1 = emu._disk.read_sector(1)
-        recovered_img = bf.DiskImage.from_bytes(s0 + s1)
+        # Reconstruct working region from the emulator's sector files.
+        # KH-940 uses 32 sectors (32 KB); KH-930 used only 2.
+        working_sectors = bf.KH940_WORKING_SECTORS
+        working_region = b"".join(
+            emu._disk.read_sector(n) for n in range(working_sectors)
+        )
+        recovered_img = bf.DiskImage.from_bytes(working_region, bf.MachineModel.KH940)
         assert recovered_img.read_pattern(901) == original_pat
