@@ -263,13 +263,18 @@ def write_pattern(
     raw = _bytes_from_upload(file)
     try:
         result = load_image(
-            raw, threshold=threshold, stitch_aspect_ratio=stitch_aspect_ratio
+            raw,
+            threshold=threshold,
+            stitch_aspect_ratio=stitch_aspect_ratio,
+            max_rows=_state.disk.max_rows,
         )
     except ImageError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
     try:
         _state.disk.write_pattern(number, result.rows)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -295,7 +300,10 @@ def preview_image(
     raw = _bytes_from_upload(file)
     try:
         result = load_image(
-            raw, threshold=threshold, stitch_aspect_ratio=stitch_aspect_ratio
+            raw,
+            threshold=threshold,
+            stitch_aspect_ratio=stitch_aspect_ratio,
+            max_rows=_state.disk.max_rows,
         )
     except ImageError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
