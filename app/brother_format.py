@@ -892,13 +892,13 @@ class DiskImage:
         # AREA1: 0x7EE7–0x7EFF — write 0x00
         self._data[0x7EE7:0x7F00] = bytes(0x7F00 - 0x7EE7)
 
-        # CONTROL_DATA: 0x7F00–0x7F16 — initialise fully below
-        self._write_940_control_data(
-            next_ptr=KH940_INIT_PATTERN_OFFSET + 1,
-            last_bottom=KH940_INIT_PATTERN_OFFSET,
-            last_top=KH940_INIT_PATTERN_OFFSET,
-            last_number=901,
-        )
+        # CONTROL_DATA: 0x7F00–0x7F16 — initialise fully below.
+        # Per the spec, all pointer fields are 0x0000 on a freshly-formatted
+        # disk (no patterns yet).  We pass sentinel value 0 for last_number
+        # so that LOADED_PATTERN is left at its separately-written 0x1000
+        # default; _write_940_control_data skips the LOADED_PATTERN write
+        # when last_number is 0.
+        self._write_940_control_data_blank()
 
         # AREA2: 0x7F17–0x7F2F — write 0x00
         self._data[0x7F17:0x7F30] = bytes(0x7F30 - 0x7F17)
@@ -916,6 +916,37 @@ class DiskImage:
         # LAST_BYTE: 0x7FFF = 0x02
         self._data[0x7FFF] = 0x02
 
+    def _write_940_control_data_blank(self) -> None:
+        """
+        Write the KH-940 CONTROL_DATA block for a freshly-formatted disk
+        (no patterns).  Per the spec all pointer fields are 0x0000; the
+        fixed UNK and structural fields are written normally.
+        LOADED_PATTERN is NOT touched here — it is set to 0x1000 by the
+        caller (_zero_940_regions) immediately after this call.
+        """
+        base = KH940_CONTROL_DATA_ADDR
+
+        def _write16(offset: int, value: int) -> None:
+            self._data[base + offset] = (value >> 8) & 0xFF
+            self._data[base + offset + 1] = value & 0xFF
+
+        _write16(0x00, 0x0000)   # PATTERN_PTR1 — 0x0000 after format
+        _write16(0x02, 0x0000)   # UNK1         — 0x0000 after format
+        _write16(0x04, 0x0000)   # PATTERN_PTR0 — 0x0000 after format
+        _write16(0x06, 0x0000)   # LAST_BOTTOM  — 0x0000 after format
+        _write16(0x08, 0x0000)   # UNK2
+        _write16(0x0A, 0x0000)   # LAST_TOP     — 0x0000 after format
+        # UNK3: 4 bytes = 0x00000000 after format
+        self._data[base + 0x0C] = 0x00
+        self._data[base + 0x0D] = 0x00
+        self._data[base + 0x0E] = 0x00
+        self._data[base + 0x0F] = 0x00
+        _write16(0x10, 0x7FF9)   # HEADER_PTR   — 0x7FF9 after format
+        _write16(0x12, 0x0000)   # UNK_PTR
+        self._data[base + 0x14] = 0x00
+        self._data[base + 0x15] = 0x00
+        self._data[base + 0x16] = 0x00  # UNK4
+
     def _write_940_control_data(
         self,
         next_ptr: int,
@@ -930,13 +961,15 @@ class DiskImage:
         ----------
         next_ptr:
             Reversed-address offset of (first byte of last pattern + 1).
-            = KH940_REVERSED_BASE - (first_byte_of_last_pattern - 1)
+            = KH940_REVERSED_BASE - first_byte_of_last_pattern + 1
         last_bottom:
-            Reversed-address offset of the last byte of the last pattern.
+            Reversed-address offset of the last byte of the last pattern
+            (= the memo block's last byte = memo_offset).
             = KH940_REVERSED_BASE - memo_offset_of_last_pattern
         last_top:
-            Reversed-address offset of the first byte of the last pattern.
-            = KH940_REVERSED_BASE - (pat_start of last pattern)
+            Reversed-address offset of the first byte of the last pattern's
+            DATA block (not the memo, and not the combined block start).
+            = KH940_REVERSED_BASE - pattern_offset_of_last_pattern
         last_number:
             Pattern number of the last created pattern (901–999).
         """
@@ -978,17 +1011,32 @@ class DiskImage:
             return
         last = entries[-1]
 
-        # Reversed-address offsets
+        # LAST_BOTTOM = reversed offset of memo_offset (last byte of the
+        #               memo block, which is the last byte of the whole entry).
         memo_rev = KH940_REVERSED_BASE - last.memo_offset
-        pat_rev = KH940_REVERSED_BASE - last.pattern_offset
-        # "first byte of last pattern" in reversed space
-        pat_end_rev = KH940_REVERSED_BASE - last.block_end_offset
-        next_ptr = pat_end_rev + 1  # offset just past the whole block
 
-        # HEADER_PTR = reversed address of (end of last valid directory slot)
-        header_ptr = KH940_REVERSED_BASE - (
-            (self._next_slot) * DIRECTORY_ENTRY_SIZE - 1
-        )
+        # LAST_TOP = reversed offset of the first byte of the pattern DATA
+        #            block (not the memo, not the combined start).
+        #            pattern_offset is the *last* byte of the DATA block, so
+        #            the first byte is at:
+        #              pat_first = pattern_offset - bytes_per_pattern(...) + 1
+        pat_data_bytes = bytes_per_pattern(last.stitches, last.rows)
+        pat_first = last.pattern_offset - pat_data_bytes + 1
+        pat_rev = KH940_REVERSED_BASE - pat_first
+
+        # PATTERN_PTR1/PTR0 = reversed offset of (first byte of last pattern + 1)
+        # = reversed offset of the byte *just above* the DATA block.
+        # Since reversed addresses decrease as file addresses increase, adding 1
+        # to a reversed offset means one byte *closer* to LAST_BYTE (lower file addr).
+        # Equivalently: KH940_REVERSED_BASE - (pat_first - 1)
+        next_ptr = KH940_REVERSED_BASE - (pat_first - 1)
+
+        # HEADER_PTR = reversed offset of the first byte of the FINHDR entry,
+        # i.e. the byte immediately after the last valid directory slot.
+        # self._next_slot has already been incremented to include the pattern
+        # we just wrote, so (self._next_slot * 7) is the file address of the
+        # first byte of the FINHDR.
+        header_ptr = KH940_REVERSED_BASE - (self._next_slot * DIRECTORY_ENTRY_SIZE)
 
         self._write_940_control_data(
             next_ptr=next_ptr,
