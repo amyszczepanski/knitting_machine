@@ -930,19 +930,19 @@ class DiskImage:
             self._data[base + offset] = (value >> 8) & 0xFF
             self._data[base + offset + 1] = value & 0xFF
 
-        _write16(0x00, 0x0000)   # PATTERN_PTR1 — 0x0000 after format
-        _write16(0x02, 0x0000)   # UNK1         — 0x0000 after format
-        _write16(0x04, 0x0000)   # PATTERN_PTR0 — 0x0000 after format
-        _write16(0x06, 0x0000)   # LAST_BOTTOM  — 0x0000 after format
-        _write16(0x08, 0x0000)   # UNK2
-        _write16(0x0A, 0x0000)   # LAST_TOP     — 0x0000 after format
+        _write16(0x00, 0x0000)  # PATTERN_PTR1 — 0x0000 after format
+        _write16(0x02, 0x0000)  # UNK1         — 0x0000 after format
+        _write16(0x04, 0x0000)  # PATTERN_PTR0 — 0x0000 after format
+        _write16(0x06, 0x0000)  # LAST_BOTTOM  — 0x0000 after format
+        _write16(0x08, 0x0000)  # UNK2
+        _write16(0x0A, 0x0000)  # LAST_TOP     — 0x0000 after format
         # UNK3: 4 bytes = 0x00000000 after format
         self._data[base + 0x0C] = 0x00
         self._data[base + 0x0D] = 0x00
         self._data[base + 0x0E] = 0x00
         self._data[base + 0x0F] = 0x00
-        _write16(0x10, 0x7FF9)   # HEADER_PTR   — 0x7FF9 after format
-        _write16(0x12, 0x0000)   # UNK_PTR
+        _write16(0x10, 0x7FF9)  # HEADER_PTR   — 0x7FF9 after format
+        _write16(0x12, 0x0000)  # UNK_PTR
         self._data[base + 0x14] = 0x00
         self._data[base + 0x15] = 0x00
         self._data[base + 0x16] = 0x00  # UNK4
