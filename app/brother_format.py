@@ -174,6 +174,7 @@ KH930_NEXT_ROW_ADDR: int = 0x072F
 KH930_CURRENT_ROW_NUMBER_ADDR: int = 0x0702
 KH930_CARRIAGE_STATUS_ADDR: int = 0x070F
 KH930_SELECT_ADDR: int = 0x07EA
+KH930_MAX_ROWS: int = 41
 
 # ---------------------------------------------------------------------------
 # Constants — KH-940
@@ -184,6 +185,7 @@ KH940_WORKING_SECTORS: int = 32
 KH940_MAX_PATTERNS: int = 98
 KH940_INIT_PATTERN_OFFSET: int = 0x7EDF  # file address
 KH940_LAST_BYTE_ADDR: int = 0x7FFF
+KH940_MAX_ROWS: int = 999  # limited by interface rather than memory
 
 # Control data block base address (file address)
 KH940_CONTROL_DATA_ADDR: int = 0x7F00
@@ -795,6 +797,10 @@ class DiskImage:
     # ------------------------------------------------------------------
     # Properties derived from model
     # ------------------------------------------------------------------
+
+    @property
+    def max_rows(self) -> int:
+        return KH940_MAX_ROWS if self.model == MachineModel.KH940 else KH930_MAX_ROWS
 
     @property
     def _working_region_size(self) -> int:
