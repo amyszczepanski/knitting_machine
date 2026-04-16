@@ -931,7 +931,7 @@ class DiskImage:
             self._data[base + offset + 1] = value & 0xFF
 
         _write16(0x00, 0x0000)  # PATTERN_PTR1 — 0x0000 after format
-        _write16(0x02, 0x0000)  # UNK1         — 0x0000 after format
+        _write16(0x02, 0x0001)  # UNK1         — fixed value, same as non-blank
         _write16(0x04, 0x0000)  # PATTERN_PTR0 — 0x0000 after format
         _write16(0x06, 0x0000)  # LAST_BOTTOM  — 0x0000 after format
         _write16(0x08, 0x0000)  # UNK2
@@ -1060,6 +1060,7 @@ class DiskImage:
             if self.model == MachineModel.KH940
             else decode_directory_entry
         )
+        last_entry = None
         for slot in range(self._max_patterns):
             raw = self._data[
                 slot * DIRECTORY_ENTRY_SIZE : (slot + 1) * DIRECTORY_ENTRY_SIZE
@@ -1068,8 +1069,11 @@ class DiskImage:
             if entry is None:
                 self._next_slot = slot
                 break
+            last_entry = entry
             self._next_pattern_ptr = entry.block_end_offset
         else:
+            # All slots occupied: _next_pattern_ptr was set on the last
+            # iteration above, so it is already correct.  Just fix _next_slot.
             self._next_slot = self._max_patterns
 
     # ------------------------------------------------------------------
