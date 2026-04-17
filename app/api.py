@@ -293,14 +293,20 @@ def _run_send(task_id: str, disk_image_bytes: bytes) -> None:
 @app.get("/patterns", response_model=PatternListResponse)
 def list_patterns() -> PatternListResponse:
     """Return all patterns currently in the in-memory disk image."""
-    patterns: list[PatternInfo] = [
-        PatternInfo(
-            number=entry.number,
-            rows=entry.rows,
-            stitches=entry.stitches,
-        )
-        for entry in _state.disk.list_patterns()
-    ]
+    patterns: list[PatternInfo] = []
+    for number in range(901, 1000):
+        try:
+            pixel_rows = _state.disk.read_pattern(number)
+        except Exception:
+            continue
+        if pixel_rows:
+            patterns.append(
+                PatternInfo(
+                    number=number,
+                    rows=len(pixel_rows),
+                    stitches=len(pixel_rows[0]),
+                )
+            )
     return PatternListResponse(patterns=patterns)
 
 

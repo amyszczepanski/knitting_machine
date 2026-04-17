@@ -1060,7 +1060,6 @@ class DiskImage:
             if self.model == MachineModel.KH940
             else decode_directory_entry
         )
-        last_entry = None
         for slot in range(self._max_patterns):
             raw = self._data[
                 slot * DIRECTORY_ENTRY_SIZE : (slot + 1) * DIRECTORY_ENTRY_SIZE
@@ -1069,7 +1068,6 @@ class DiskImage:
             if entry is None:
                 self._next_slot = slot
                 break
-            last_entry = entry
             self._next_pattern_ptr = entry.block_end_offset
         else:
             # All slots occupied: _next_pattern_ptr was set on the last

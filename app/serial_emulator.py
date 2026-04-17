@@ -550,17 +550,16 @@ class PDDEmulator:
             return
 
         io.write(_status_ok(psn))
-        # Wait for the machine's acknowledgement CR before sending data.
-        # If the expected CR does not arrive (timeout or unexpected byte) we
-        # log a warning but send the data anyway so the machine doesn't hang.
+        # Wait for the machine's acknowledgement CR before sending data
         ack = io._port.read(1)
-        if not ack or chr(ack[0]) != "\r":
+        if ack and chr(ack[0]) == "\r":
+            io.write(id_data)
+        else:
             logger.warning(
-                "Read-ID sector %d: expected CR ack, got %r — sending data anyway",
+                "Read-ID sector %d: expected CR ack, got %r — not sending data",
                 psn,
                 ack,
             )
-        io.write(id_data)
 
     def _cmd_read_sector(self, io: _SerialIO) -> None:
         """R — Read one logical sector (1024 bytes)."""
@@ -574,25 +573,23 @@ class PDDEmulator:
             return
 
         io.write(_status_ok(psn))
-        # Wait for the machine's acknowledgement CR before sending data.
-        # If the expected CR does not arrive (timeout or unexpected byte) we
-        # log a warning but send the data anyway so the machine doesn't hang.
+        # Wait for the machine's acknowledgement CR before sending data
         ack = io._port.read(1)
-        if not ack or chr(ack[0]) != "\r":
+        if ack and chr(ack[0]) == "\r":
+            io.write(data)
+        else:
             logger.warning(
-                "Read sector %d: expected CR ack, got %r — sending data anyway",
+                "Read sector %d: expected CR ack, got %r — not sending data",
                 psn,
                 ack,
             )
-        io.write(data)
 
     def _cmd_search_id(self, io: _SerialIO) -> None:
         """S — Search for a sector by its 12-byte ID."""
         psn = self._read_psn(io)
-        # Receive the 12-byte ID to search for, then send the result.
-        # (No preliminary status is sent before reading the target ID — the
-        # machine sends the ID immediately after the command parameters and
-        # expects a single 8-char result response.)
+        # Send initial status (acknowledges receipt of the command + PSN),
+        # then receive the 12-byte ID to search for, then send the result.
+        io.write(_status_ok(psn))
         target_id = io.read_bytes(ID_SIZE)
         logger.debug("Search ID starting at sector %d, target=%s", psn, target_id.hex())
         result = self._disk.find_sector_by_id(psn, target_id)
