@@ -120,10 +120,17 @@ class _AppState:
     def __init__(self) -> None:
         self.model: MachineModel = MachineModel.KH940
         self.disk: DiskImage = DiskImage.blank(self.model)
-        self.serial_port: str = "/dev/ttyUSB0"
+        self.serial_port: str = "/dev/tty.usbserial-FT3Q58M1"
         self.baud_rate: int = 9600
         self.disk_dir: str = "/tmp/knitting_disk"
         self.tasks: dict[str, "_TaskState"] = {}
+        # Sector files persisted from the last machine save operation.
+        # These are the .dat and .id files the machine itself wrote, including
+        # the sector IDs the machine generated.  They must be fed back into the
+        # emulator on the next load operation so the machine can find its own
+        # sectors by ID.  Both dicts map sector number (0–79) → raw bytes.
+        self.sector_dat: dict[int, bytes] = {}
+        self.sector_id: dict[int, bytes] = {}
 
 
 _state = _AppState()
@@ -222,47 +229,42 @@ def _render_preview_png(pixel_rows: list[list[int]]) -> bytes:
     return buf.getvalue()
 
 
-def _run_send(task_id: str, disk_image_bytes: bytes) -> None:
-    """Background thread: load disk image into the emulator and serve it.
+def _run_receive(task_id: str) -> None:
+    """Background thread: run the emulator in receive mode.
 
-    This function contains all direct hardware interaction and is the
-    primary target for operational logging.  Every major step is logged
-    at INFO so that a post-mortem of the log file can pinpoint exactly
-    how far a transfer got before failing.
+    The machine initiates a save operation.  The emulator accepts whatever
+    the machine writes — sector data and sector IDs — and on completion
+    persists the full sector state into _state.sector_dat / _state.sector_id.
+    The in-memory DiskImage is then rebuilt from the received data so that
+    GET /patterns reflects what was saved.
+
+    The persisted sector files (including the machine-written IDs) are what
+    make subsequent load operations work: on the next POST /send the emulator
+    will serve those same files back and the machine will recognise its own
+    sector IDs.
     """
     task = _state.tasks[task_id]
     task.status = _TaskStatus.RUNNING
 
     port = _state.serial_port
     baud = _state.baud_rate
-    image_size = len(disk_image_bytes)
 
     log.info(
-        "Send task %s started — port=%s  baud=%d  image=%d bytes",
+        "Receive task %s started — port=%s  baud=%d",
         task_id,
         port,
         baud,
-        image_size,
     )
 
     try:
-        # ---- step 1: import serial emulator --------------------------------
-        # Done here (not at module level) so that pyserial is only required
-        # when actually sending.
         log.info("[%s] Importing serial emulator", task_id)
         from app.serial_emulator import PDDEmulator  # noqa: PLC0415
         import tempfile  # noqa: PLC0415
 
-        # ---- step 2: create emulator and load disk image -------------------
-        log.info("[%s] Creating PDDEmulator and loading disk image", task_id)
+        log.info("[%s] Creating PDDEmulator (blank disk — waiting for machine to write)", task_id)
         with tempfile.TemporaryDirectory() as tmpdir:
             emulator = PDDEmulator(disk_dir=tmpdir)
-            emulator.load_disk_image(disk_image_bytes)
-            log.info(
-                "[%s] Disk image loaded into emulator (%d bytes)", task_id, image_size
-            )
 
-            # ---- step 3: open serial port and begin serving ----------------
             log.info(
                 "[%s] Opening serial port %s at %d baud — waiting for machine",
                 task_id,
@@ -270,8 +272,109 @@ def _run_send(task_id: str, disk_image_bytes: bytes) -> None:
                 baud,
             )
             emulator.run(port=port, baudrate=baud)
-            # run() is blocking until the machine finishes reading or the
-            # user calls stop().  Reaching this line means it returned cleanly.
+            log.info("[%s] emulator.run() returned — save complete", task_id)
+
+            # ---- Capture everything the machine wrote ----------------------
+            dat_files, id_files = emulator.read_sector_files()
+
+        # Persist sector state so the next send can serve it back.
+        _state.sector_dat = dat_files
+        _state.sector_id = id_files
+        log.info(
+            "[%s] Persisted %d sector data + %d sector ID files",
+            task_id,
+            len(dat_files),
+            len(id_files),
+        )
+
+        # Rebuild the in-memory DiskImage from received data.
+        working_sectors = 32  # KH-940 uses first 32 sectors
+        working_bytes = b"".join(
+            dat_files.get(n, bytes(1024)) for n in range(working_sectors)
+        )
+        try:
+            _state.disk = DiskImage.from_bytes(working_bytes, _state.model)
+            log.info(
+                "[%s] Rebuilt DiskImage — %d pattern(s) found",
+                task_id,
+                len(_state.disk.list_patterns()),
+            )
+        except Exception as exc:
+            log.warning(
+                "[%s] Could not rebuild DiskImage from received data: %s",
+                task_id,
+                exc,
+            )
+
+        task.status = _TaskStatus.DONE
+        log.info("[%s] Receive task finished successfully", task_id)
+
+    except Exception as exc:
+        task.status = _TaskStatus.ERROR
+        task.error = str(exc)
+        log.error("[%s] Receive task failed: %s", task_id, exc, exc_info=True)
+
+
+def _run_send(task_id: str) -> None:
+    """Background thread: serve the persisted sector files to the machine.
+
+    The machine initiates a load operation.  The emulator serves back the
+    exact sector data and IDs that the machine itself wrote during the most
+    recent receive operation.  Because the IDs were written by the machine,
+    the machine's own sector-search commands will find them correctly.
+
+    Prerequisites: _state.sector_dat and _state.sector_id must have been
+    populated by a prior _run_receive call (i.e. the machine must have saved
+    at least once before it can load).
+    """
+    task = _state.tasks[task_id]
+    task.status = _TaskStatus.RUNNING
+
+    port = _state.serial_port
+    baud = _state.baud_rate
+
+    log.info(
+        "Send task %s started — port=%s  baud=%d  sectors=%d",
+        task_id,
+        port,
+        baud,
+        len(_state.sector_dat),
+    )
+
+    if not _state.sector_dat:
+        msg = (
+            "No sector files available — the machine must perform a save "
+            "(POST /receive) before it can load.  This establishes the sector "
+            "IDs the machine needs to find its own data."
+        )
+        task.status = _TaskStatus.ERROR
+        task.error = msg
+        log.error("[%s] %s", task_id, msg)
+        return
+
+    try:
+        log.info("[%s] Importing serial emulator", task_id)
+        from app.serial_emulator import PDDEmulator  # noqa: PLC0415
+        import tempfile  # noqa: PLC0415
+
+        log.info("[%s] Creating PDDEmulator and populating sector files", task_id)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            emulator = PDDEmulator(disk_dir=tmpdir)
+            emulator.populate_sector_files(_state.sector_dat, _state.sector_id)
+            log.info(
+                "[%s] Sector files populated (%d data, %d ID)",
+                task_id,
+                len(_state.sector_dat),
+                len(_state.sector_id),
+            )
+
+            log.info(
+                "[%s] Opening serial port %s at %d baud — waiting for machine",
+                task_id,
+                port,
+                baud,
+            )
+            emulator.run(port=port, baudrate=baud)
             log.info("[%s] emulator.run() returned — transfer complete", task_id)
 
         task.status = _TaskStatus.DONE
@@ -280,8 +383,6 @@ def _run_send(task_id: str, disk_image_bytes: bytes) -> None:
     except Exception as exc:
         task.status = _TaskStatus.ERROR
         task.error = str(exc)
-        # exc_info=True attaches the full traceback to the log record so the
-        # exact line inside the emulator (or pyserial) that failed is visible.
         log.error("[%s] Send task failed: %s", task_id, exc, exc_info=True)
 
 
@@ -399,25 +500,80 @@ def preview_image(
 
 @app.post("/send", response_model=SendResponse)
 def send_to_machine() -> SendResponse:
-    """Spawn a background thread to serve the disk image over serial.
+    """Serve the persisted sector files to the machine for a load operation.
+
+    The machine must have performed at least one save (POST /receive) before
+    this endpoint will succeed, because the sector IDs the machine needs to
+    locate its own data are only established during a save.
 
     Returns a task_id; poll GET /send/{task_id} for status.
     """
+    # Prevent two emulator tasks from opening the serial port simultaneously.
+    for task in _state.tasks.values():
+        if task.status == _TaskStatus.RUNNING:
+            raise HTTPException(
+                status_code=409,
+                detail="An emulator task is already running. Wait for it to finish or stop it first.",
+            )
+
     task_id = str(uuid.uuid4())
     _state.tasks[task_id] = _TaskState()
-
-    disk_bytes = _state.disk.to_disk_image_bytes()
 
     log.info(
         "Queuing send task %s — %d pattern(s) in disk image, port=%s",
         task_id,
-        sum(1 for n in range(901, 1000) if _state.disk.read_pattern(n)),
+        len(_state.disk.list_patterns()),
         _state.serial_port,
     )
 
     thread = threading.Thread(
         target=_run_send,
-        args=(task_id, disk_bytes),
+        args=(task_id,),
+        daemon=True,
+        name=f"pdd-emulator-{task_id[:8]}",
+    )
+    thread.start()
+
+    return SendResponse(task_id=task_id, status=_TaskStatus.PENDING)
+
+
+@app.post("/receive", response_model=SendResponse)
+def receive_from_machine() -> SendResponse:
+    """Run the emulator in receive mode so the machine can save to it.
+
+    Start this endpoint, then initiate a save on the KH-940 keypad.  The
+    emulator accepts the machine's write operations — sector data and sector
+    IDs — and on completion:
+
+      1. Persists the sector files (including machine-written IDs) so that
+         a subsequent POST /send can serve them back correctly.
+      2. Rebuilds the in-memory DiskImage from the received data so that
+         GET /patterns reflects what was just saved.
+
+    This must be called at least once before POST /send will work.
+
+    Returns a task_id; poll GET /send/{task_id} for status.
+    """
+    # Prevent two emulator tasks from opening the serial port simultaneously.
+    for task in _state.tasks.values():
+        if task.status == _TaskStatus.RUNNING:
+            raise HTTPException(
+                status_code=409,
+                detail="An emulator task is already running. Wait for it to finish or stop it first.",
+            )
+
+    task_id = str(uuid.uuid4())
+    _state.tasks[task_id] = _TaskState()
+
+    log.info(
+        "Queuing receive task %s — port=%s",
+        task_id,
+        _state.serial_port,
+    )
+
+    thread = threading.Thread(
+        target=_run_receive,
+        args=(task_id,),
         daemon=True,
         name=f"pdd-emulator-{task_id[:8]}",
     )

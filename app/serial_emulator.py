@@ -60,7 +60,7 @@ machine completes a write cycle:
         ...
 
     emu = PDDEmulator(disk_dir, on_write=on_sector_pair_written)
-    emu.run("/dev/ttyUSB0")
+    emu.run("/dev/tty.usbserial-FT3Q58M1")
 """
 
 from __future__ import annotations
@@ -357,7 +357,7 @@ class PDDEmulator:
     # Public interface
     # ------------------------------------------------------------------
 
-    def run(self, port: str = "/dev/ttyUSB0", baudrate: int = 9600) -> None:
+    def run(self, port: str = "/dev/tty.usbserial-FT3Q58M1", baudrate: int = 9600) -> None:
         """
         Open the serial port and run the emulator loop (blocking).
 
@@ -387,43 +387,91 @@ class PDDEmulator:
         """Signal the run() loop to exit after the current operation."""
         self._stop_event.set()
 
-    def load_disk_image(self, image_bytes: bytes) -> None:
+    def populate_sector_files(
+        self,
+        dat_files: dict[int, bytes],
+        id_files: dict[int, bytes],
+    ) -> None:
         """
-        Pre-populate the virtual disk from a full 81,920-byte (or 2,048-byte)
-        disk image.  Call this before run() to load patterns onto the emulated
-        disk.
+        Pre-populate the virtual disk from sector data and ID dicts before
+        calling run().  Both dicts map sector number (0–79) to raw bytes.
+
+        This is used to restore a disk state that was previously written by
+        the machine (captured via read_sector_files()).  The machine writes
+        its own sector IDs during a save operation; those IDs must be present
+        for the machine to be able to locate the sectors on a subsequent load.
+
+        Parameters
+        ----------
+        dat_files:
+            Sector data bytes — each value must be exactly SECTOR_SIZE (1,024)
+            bytes.  Sectors absent from the dict are left as blank zeros.
+        id_files:
+            Sector ID bytes — each value must be exactly ID_SIZE (12) bytes.
+            Sectors absent from the dict are left as blank zeros.
         """
-        from app.brother_format import SECTOR_SIZE as _SS, NUM_SECTORS as _NS
+        for psn, data in dat_files.items():
+            self._disk.write_sector(psn, data)
+        for psn, id_data in id_files.items():
+            self._disk.write_id(psn, id_data)
+        logger.info(
+            "Populated virtual disk: %d data sectors, %d ID sectors",
+            len(dat_files),
+            len(id_files),
+        )
 
-        if len(image_bytes) < _SS * 2:
-            raise ValueError("Image must be at least 2,048 bytes")
+    def read_sector_files(self) -> tuple[dict[int, bytes], dict[int, bytes]]:
+        """
+        Export the current virtual disk state as two dicts mapping sector
+        number to raw bytes.
 
-        count = min(_NS, len(image_bytes) // _SS)
-        for n in range(count):
-            chunk = image_bytes[n * _SS : (n + 1) * _SS]
-            self._disk.write_sector(n, chunk)
-        logger.info("Loaded disk image (%d sectors)", count)
+        Returns
+        -------
+        dat_files:
+            Sector data — sector number → 1,024 bytes.
+        id_files:
+            Sector IDs — sector number → 12 bytes.
+
+        Call this after run() returns (i.e. after the machine has finished a
+        save operation) to capture the sector files the machine wrote,
+        including the IDs.  Persist the result and pass it back into
+        populate_sector_files() before the next load operation.
+        """
+        dat_files: dict[int, bytes] = {}
+        id_files: dict[int, bytes] = {}
+        for psn in range(NUM_SECTORS):
+            dat_files[psn] = self._disk.read_sector(psn)
+            id_files[psn] = self._disk.read_id(psn)
+        return dat_files, id_files
 
     # ------------------------------------------------------------------
     # Internal dispatch
     # ------------------------------------------------------------------
 
     def _handle_one(self, io: _SerialIO) -> None:
-        """Read one byte and dispatch to the appropriate mode handler."""
-        # Use a 1-second timeout so that stop() is checked regularly.
         b = io._port.read(1)
         if not b:
-            return  # timeout, loop again
+            return
         ch = chr(b[0])
-
         if self._fdc_mode:
             self._handle_fdc(io, ch)
         else:
-            # OpMode: watch for the "ZZ" preamble
-            if ch == "Z":
-                second = io._port.read(1)
-                if second and chr(second[0]) == "Z":
-                    self._handle_opmode(io)
+            if ch != "Z":
+                return
+            # Got first Z — peek at second byte
+            second = io._port.read(1)
+            if not second:
+                return
+            if chr(second[0]) == "Z":
+                self._handle_opmode(io)
+            else:
+                # Not a ZZ preamble — treat the second byte as a fresh byte
+                # by processing it immediately rather than discarding it.
+                # This prevents a one-byte misalignment if the Z was noise.
+                if self._fdc_mode:
+                    self._handle_fdc(io, chr(second[0]))
+                # If still in OpMode, discard and keep scanning — a lone Z
+                # followed by a non-Z is not a valid OpMode preamble.
 
     # ------------------------------------------------------------------
     # OpMode
@@ -466,12 +514,16 @@ class PDDEmulator:
             return
 
         if cmd == "Z":
-            # Might be the start of an OpMode "ZZ" preamble.
             peek = io._port.read(1)
             if peek and chr(peek[0]) == "Z":
                 logger.info("Detected OpMode handshake in FDC mode — switching back")
                 self._fdc_mode = False
                 self._handle_opmode(io)
+            elif peek:
+                # Second byte wasn't Z, so this wasn't a ZZ preamble.
+                # Dispatch the peeked byte as a normal FDC command rather
+                # than discarding it, to avoid a one-byte misalignment.
+                self._handle_fdc(io, chr(peek[0]))
             return
 
         logger.debug("FDC command: %r", cmd)
@@ -651,7 +703,7 @@ def main() -> None:
     parser.add_argument(
         "disk_dir", help="Directory for sector files (created if absent)"
     )
-    parser.add_argument("serial_port", help="Serial device, e.g. /dev/ttyUSB0")
+    parser.add_argument("serial_port", help="Serial device, e.g. /dev/tty.usbserial-FT3Q58M1")
     parser.add_argument(
         "--baud", type=int, default=9600, help="Baud rate (default: 9600)"
     )

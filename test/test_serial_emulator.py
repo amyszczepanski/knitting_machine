@@ -450,3 +450,20 @@ class TestLoadDiskImage:
         )
         recovered_img = bf.DiskImage.from_bytes(working_region, bf.MachineModel.KH940)
         assert recovered_img.read_pattern(901) == original_pat
+
+    def test_load_disk_image_populates_sector_ids(self):
+        import tempfile
+        from app.serial_emulator import PDDEmulator
+        from app.brother_format import DiskImage, MachineModel
+
+        d = DiskImage.blank(MachineModel.KH940)
+        d.write_pattern(901, [[1, 0, 1, 0]] * 4)
+        raw = d.to_disk_image_bytes()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            emu = PDDEmulator(disk_dir=tmpdir)
+            emu.load_disk_image(raw)
+            # All working-region sectors should have non-zero IDs
+            for n in range(32):  # KH-940 uses 32 working sectors
+                id_data = emu._disk.read_id(n)
+                assert any(b != 0 for b in id_data), f"Sector {n} has a blank ID"
