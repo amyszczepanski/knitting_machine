@@ -746,6 +746,44 @@ def _encode_finhdr_940(slot_index: int, next_number: int) -> tuple[int, bytes]:
 
 
 # ---------------------------------------------------------------------------
+# Sector ID generation
+# ---------------------------------------------------------------------------
+
+
+def generate_sector_id(psn: int) -> bytes:
+    """
+    Generate the 12-byte sector ID for physical sector number `psn` (0–79).
+
+    The format was reverse-engineered from a real KH-940 capture and follows
+    this layout:
+
+      Bytes 0–1:   psn as little-endian uint16
+      Bytes 2–3:   track number (psn // 2) as little-endian uint16
+      Bytes 4–9:   0x00 × 6  (fixed)
+      Bytes 10–11: (0x05FA - psn - psn // 2) as big-endian uint16
+
+    The checksum in bytes 10–11 decreases by 1 or 2 with each sector
+    (alternating) because it subtracts both the sector number and the track
+    number, and every two sectors the track increments by one.
+    """
+    if not (0 <= psn < NUM_SECTORS):
+        raise ValueError(f"PSN {psn} out of range 0–{NUM_SECTORS - 1}")
+    track = psn // 2
+    checksum = 0x05FA - psn - track
+    return bytes(
+        [
+            psn & 0xFF,          # byte 0: PSN low
+            (psn >> 8) & 0xFF,   # byte 1: PSN high
+            track & 0xFF,        # byte 2: track low
+            (track >> 8) & 0xFF, # byte 3: track high
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  # bytes 4–9: fixed zeros
+            (checksum >> 8) & 0xFF,  # byte 10: checksum high
+            checksum & 0xFF,         # byte 11: checksum low
+        ]
+    )
+
+
+# ---------------------------------------------------------------------------
 # DiskImage — top-level object, supports both KH-930 and KH-940
 # ---------------------------------------------------------------------------
 
@@ -1261,6 +1299,7 @@ class DiskImage:
         working region; the remainder are zero-padded.
 
         This is what PDDEmulator expects: sector N → file ``NN.dat``.
+        Use to_id_files() to obtain the corresponding sector IDs.
         """
         sectors: dict[int, bytes] = {}
         working = bytes(self._data)
@@ -1269,6 +1308,20 @@ class DiskImage:
         for n in range(self._working_sectors, NUM_SECTORS):
             sectors[n] = bytes(SECTOR_SIZE)
         return sectors
+
+    def to_id_files(self) -> dict[int, bytes]:
+        """
+        Return the sector IDs for all 80 sectors as a dict mapping sector
+        number (0–79) to 12-byte ID blocks.
+
+        IDs are generated synthetically via generate_sector_id(), which was
+        reverse-engineered from a real KH-940 capture.  No prior receive
+        operation is required.
+
+        Pass the result of this method alongside to_sector_files() to
+        PDDEmulator.populate_sector_files() before a send operation.
+        """
+        return {n: generate_sector_id(n) for n in range(NUM_SECTORS)}
 
     def to_disk_image_bytes(self) -> bytes:
         """

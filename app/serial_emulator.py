@@ -357,9 +357,25 @@ class PDDEmulator:
     # Public interface
     # ------------------------------------------------------------------
 
-    def run(self, port: str = "/dev/tty.usbserial-FT3Q58M1", baudrate: int = 9600) -> None:
+    def run(
+        self,
+        port: str = "/dev/tty.usbserial-FT3Q58M1",
+        baudrate: int = 9600,
+        idle_timeout: int = 300,
+    ) -> None:
         """
         Open the serial port and run the emulator loop (blocking).
+
+        The loop exits when any of the following occur:
+        - stop() is called from another thread.
+        - No byte arrives for `idle_timeout` consecutive seconds (i.e. the
+          machine has gone quiet between top-level commands).  The counter
+          resets to zero each time a byte is received, so a slow but active
+          transfer will never trigger it.
+
+        `idle_timeout` is intentionally not exposed in the API config; it is
+        a temporary parameter that will become unnecessary once sector IDs are
+        constructed locally rather than fetched from the machine.
 
         Call stop() from another thread to request a clean shutdown.
         """
@@ -369,16 +385,30 @@ class PDDEmulator:
             parity=serial.PARITY_NONE,
             stopbits=serial.STOPBITS_ONE,
             bytesize=serial.EIGHTBITS,
-            timeout=1,
+            timeout=1,  # read(1) returns b"" after 1 s of silence
             xonxoff=False,
             rtscts=False,
             dsrdtr=False,
         )
+        ser.rts = True
+        ser.dtr = True
         io = _SerialIO(ser)
         logger.info("PDDEmulator ready on %s at %d baud", port, baudrate)
+        idle_seconds = 0
         try:
             while not self._stop_event.is_set():
-                self._handle_one(io)
+                b = ser.read(1)
+                if not b:
+                    idle_seconds += 1
+                    if idle_seconds >= idle_timeout:
+                        logger.info(
+                            "Idle timeout (%d s) — stopping emulator", idle_timeout
+                        )
+                        break
+                    continue
+                idle_seconds = 0
+                logger.debug("RX byte: 0x%02X (%r)", b[0], chr(b[0]))
+                self._dispatch(io, chr(b[0]))
         finally:
             ser.close()
             logger.info("PDDEmulator stopped")
@@ -448,30 +478,21 @@ class PDDEmulator:
     # Internal dispatch
     # ------------------------------------------------------------------
 
-    def _handle_one(self, io: _SerialIO) -> None:
-        b = io._port.read(1)
-        if not b:
-            return
-        ch = chr(b[0])
+    def _dispatch(self, io: _SerialIO, ch: str) -> None:
+        """Dispatch one already-read character through the protocol state machine."""
         if self._fdc_mode:
             self._handle_fdc(io, ch)
         else:
             if ch != "Z":
                 return
             # Got first Z — peek at second byte
-            second = io._port.read(1)
-            if not second:
-                return
-            if chr(second[0]) == "Z":
+            second = io.read_byte()
+            if chr(second) == "Z":
                 self._handle_opmode(io)
             else:
-                # Not a ZZ preamble — treat the second byte as a fresh byte
-                # by processing it immediately rather than discarding it.
-                # This prevents a one-byte misalignment if the Z was noise.
-                if self._fdc_mode:
-                    self._handle_fdc(io, chr(second[0]))
-                # If still in OpMode, discard and keep scanning — a lone Z
-                # followed by a non-Z is not a valid OpMode preamble.
+                # Not a ZZ preamble — re-dispatch the second byte rather than
+                # discarding it, to avoid a one-byte misalignment.
+                self._dispatch(io, chr(second[0]))
 
     # ------------------------------------------------------------------
     # OpMode
@@ -514,8 +535,8 @@ class PDDEmulator:
             return
 
         if cmd == "Z":
-            peek = io._port.read(1)
-            if peek and chr(peek[0]) == "Z":
+            peek = io.read_byte()
+            if chr(peek) == "Z":
                 logger.info("Detected OpMode handshake in FDC mode — switching back")
                 self._fdc_mode = False
                 self._handle_opmode(io)
@@ -526,7 +547,7 @@ class PDDEmulator:
                 self._handle_fdc(io, chr(peek[0]))
             return
 
-        logger.debug("FDC command: %r", cmd)
+        logger.debug("FDC command: %r (0x%02X)", cmd, ord(cmd))
 
         if cmd in ("F", "G"):
             self._cmd_format(io)
@@ -558,6 +579,7 @@ class PDDEmulator:
         but always ignored it; we do the same.
         """
         tokens = io.read_until_cr()
+        logger.debug("_read_psn tokens: %r", tokens)
         try:
             psn = int(tokens[0]) if tokens and tokens[0] else 0
         except ValueError:
@@ -602,16 +624,14 @@ class PDDEmulator:
             return
 
         io.write(_status_ok(psn))
-        # Wait for the machine's acknowledgement CR before sending data
         ack = io._port.read(1)
+        logger.debug("Read ID sector %d: ack byte = %r (0x%02X)", psn, chr(ack[0]) if ack else None, ack[0] if ack else 0)
         if ack and chr(ack[0]) == "\r":
+            logger.debug("Read ID sector %d: ID bytes = %s", psn, id_data.hex())
             io.write(id_data)
+            logger.debug("Read ID sector %d: sent 12 bytes", psn)
         else:
-            logger.warning(
-                "Read-ID sector %d: expected CR ack, got %r — not sending data",
-                psn,
-                ack,
-            )
+            logger.warning("Read ID sector %d: expected CR ack, got %r — not sending data", psn, ack)
 
     def _cmd_read_sector(self, io: _SerialIO) -> None:
         """R — Read one logical sector (1024 bytes)."""
@@ -625,16 +645,12 @@ class PDDEmulator:
             return
 
         io.write(_status_ok(psn))
-        # Wait for the machine's acknowledgement CR before sending data
         ack = io._port.read(1)
         if ack and chr(ack[0]) == "\r":
             io.write(data)
+            logger.debug("Read sector %d: sent 1024 bytes", psn)
         else:
-            logger.warning(
-                "Read sector %d: expected CR ack, got %r — not sending data",
-                psn,
-                ack,
-            )
+            logger.warning("Read sector %d: expected CR ack, got %r — not sending data", psn, ack)
 
     def _cmd_search_id(self, io: _SerialIO) -> None:
         """S — Search for a sector by its 12-byte ID."""

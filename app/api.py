@@ -89,6 +89,8 @@ log.addHandler(_file_handler)
 log.addHandler(_stderr_handler)
 log.propagate = False  # don't double-log via the root logger
 
+logging.getLogger("app.serial_emulator").setLevel(_log_level)
+
 # ---------------------------------------------------------------------------
 # Application & CORS
 # ---------------------------------------------------------------------------
@@ -271,7 +273,7 @@ def _run_receive(task_id: str) -> None:
                 port,
                 baud,
             )
-            emulator.run(port=port, baudrate=baud)
+            emulator.run(port=port, baudrate=baud, idle_timeout=10)
             log.info("[%s] emulator.run() returned — save complete", task_id)
 
             # ---- Capture everything the machine wrote ----------------------
@@ -316,16 +318,11 @@ def _run_receive(task_id: str) -> None:
 
 
 def _run_send(task_id: str) -> None:
-    """Background thread: serve the persisted sector files to the machine.
+    """Background thread: serve the current disk image to the machine.
 
-    The machine initiates a load operation.  The emulator serves back the
-    exact sector data and IDs that the machine itself wrote during the most
-    recent receive operation.  Because the IDs were written by the machine,
-    the machine's own sector-search commands will find them correctly.
-
-    Prerequisites: _state.sector_dat and _state.sector_id must have been
-    populated by a prior _run_receive call (i.e. the machine must have saved
-    at least once before it can load).
+    The machine initiates a load operation.  The emulator populates sector
+    data from the in-memory DiskImage and generates sector IDs synthetically
+    via DiskImage.to_id_files() — no prior receive operation is required.
     """
     task = _state.tasks[task_id]
     task.status = _TaskStatus.RUNNING
@@ -333,39 +330,32 @@ def _run_send(task_id: str) -> None:
     port = _state.serial_port
     baud = _state.baud_rate
 
+    patterns = _state.disk.list_patterns()
     log.info(
-        "Send task %s started — port=%s  baud=%d  sectors=%d",
+        "Send task %s started — port=%s  baud=%d  patterns=%d",
         task_id,
         port,
         baud,
-        len(_state.sector_dat),
+        len(patterns),
     )
-
-    if not _state.sector_dat:
-        msg = (
-            "No sector files available — the machine must perform a save "
-            "(POST /receive) before it can load.  This establishes the sector "
-            "IDs the machine needs to find its own data."
-        )
-        task.status = _TaskStatus.ERROR
-        task.error = msg
-        log.error("[%s] %s", task_id, msg)
-        return
 
     try:
         log.info("[%s] Importing serial emulator", task_id)
         from app.serial_emulator import PDDEmulator  # noqa: PLC0415
         import tempfile  # noqa: PLC0415
 
+        dat_files = _state.disk.to_sector_files()
+        id_files = _state.disk.to_id_files()
+
         log.info("[%s] Creating PDDEmulator and populating sector files", task_id)
         with tempfile.TemporaryDirectory() as tmpdir:
             emulator = PDDEmulator(disk_dir=tmpdir)
-            emulator.populate_sector_files(_state.sector_dat, _state.sector_id)
+            emulator.populate_sector_files(dat_files, id_files)
             log.info(
                 "[%s] Sector files populated (%d data, %d ID)",
                 task_id,
-                len(_state.sector_dat),
-                len(_state.sector_id),
+                len(dat_files),
+                len(id_files),
             )
 
             log.info(
@@ -374,7 +364,7 @@ def _run_send(task_id: str) -> None:
                 port,
                 baud,
             )
-            emulator.run(port=port, baudrate=baud)
+            emulator.run(port=port, baudrate=baud, idle_timeout=300)
             log.info("[%s] emulator.run() returned — transfer complete", task_id)
 
         task.status = _TaskStatus.DONE
