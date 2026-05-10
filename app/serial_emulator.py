@@ -67,6 +67,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -614,6 +615,10 @@ class PDDEmulator:
 
     def _cmd_read_id(self, io: _SerialIO) -> None:
         """A — Read sector ID (12 bytes)."""
+
+        # FIXME introduce a delay in case this is what is causing my troubles
+        # time.sleep(0.075)
+
         psn = self._read_psn(io)
         logger.debug("Read ID sector %d", psn)
         try:
@@ -625,13 +630,22 @@ class PDDEmulator:
 
         io.write(_status_ok(psn))
         ack = io._port.read(1)
-        logger.debug("Read ID sector %d: ack byte = %r (0x%02X)", psn, chr(ack[0]) if ack else None, ack[0] if ack else 0)
+        logger.debug(
+            "Read ID sector %d: ack byte = %r (0x%02X)",
+            psn,
+            chr(ack[0]) if ack else None,
+            ack[0] if ack else 0,
+        )
         if ack and chr(ack[0]) == "\r":
             logger.debug("Read ID sector %d: ID bytes = %s", psn, id_data.hex())
             io.write(id_data)
             logger.debug("Read ID sector %d: sent 12 bytes", psn)
         else:
-            logger.warning("Read ID sector %d: expected CR ack, got %r — not sending data", psn, ack)
+            logger.warning(
+                "Read ID sector %d: expected CR ack, got %r — not sending data",
+                psn,
+                ack,
+            )
 
     def _cmd_read_sector(self, io: _SerialIO) -> None:
         """R — Read one logical sector (1024 bytes)."""
@@ -650,7 +664,9 @@ class PDDEmulator:
             io.write(data)
             logger.debug("Read sector %d: sent 1024 bytes", psn)
         else:
-            logger.warning("Read sector %d: expected CR ack, got %r — not sending data", psn, ack)
+            logger.warning(
+                "Read sector %d: expected CR ack, got %r — not sending data", psn, ack
+            )
 
     def _cmd_search_id(self, io: _SerialIO) -> None:
         """S — Search for a sector by its 12-byte ID."""
@@ -719,7 +735,9 @@ def main() -> None:
     parser.add_argument(
         "disk_dir", help="Directory for sector files (created if absent)"
     )
-    parser.add_argument("serial_port", help="Serial device, e.g. /dev/tty.usbserial-FT3Q58M1")
+    parser.add_argument(
+        "serial_port", help="Serial device, e.g. /dev/tty.usbserial-FT3Q58M1"
+    )
     parser.add_argument(
         "--baud", type=int, default=9600, help="Baud rate (default: 9600)"
     )

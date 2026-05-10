@@ -263,7 +263,10 @@ def _run_receive(task_id: str) -> None:
         from app.serial_emulator import PDDEmulator  # noqa: PLC0415
         import tempfile  # noqa: PLC0415
 
-        log.info("[%s] Creating PDDEmulator (blank disk — waiting for machine to write)", task_id)
+        log.info(
+            "[%s] Creating PDDEmulator (blank disk — waiting for machine to write)",
+            task_id,
+        )
         with tempfile.TemporaryDirectory() as tmpdir:
             emulator = PDDEmulator(disk_dir=tmpdir)
 

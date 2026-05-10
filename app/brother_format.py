@@ -3,8 +3,9 @@ brother_format.py — Brother KH-930/940 disk image format encoder/decoder.
 
 Binary format references:
   KH-930: reverse-engineered by Steve Conklin, Travis Goodspeed, and others;
-          documented in https://github.com/stg/knittington/blob/master/doc/kh940_format.txt
+          see: https://github.com/adafruit/knitting_machine
   KH-940: documented in the knittington KH940 format spec
+          https://github.com/stg/knittington/blob/master/doc/kh940_format.txt
 
 ============================================================
 KH-930 DISK IMAGE LAYOUT
@@ -135,6 +136,18 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Sequence
 
+from app.util import (
+    ceil4,
+    ceil2,
+    nibbles_per_row,
+    bytes_per_pattern,
+    bytes_for_memo,
+    bcd_encode_3digit,
+    bcd_decode_3digit,
+    read_nibble,
+    write_nibble,
+)
+
 # ---------------------------------------------------------------------------
 # Machine model
 # ---------------------------------------------------------------------------
@@ -212,117 +225,6 @@ CURRENT_ROW_NUMBER_ADDR: int = KH930_CURRENT_ROW_NUMBER_ADDR
 CARRIAGE_STATUS_ADDR: int = KH930_CARRIAGE_STATUS_ADDR
 SELECT_ADDR: int = KH930_SELECT_ADDR
 
-
-# ---------------------------------------------------------------------------
-# Low-level geometry helpers
-# ---------------------------------------------------------------------------
-
-
-def _ceil4(n: int) -> int:
-    """Round n up to the nearest multiple of 4."""
-    r = n % 4
-    return n if r == 0 else n + (4 - r)
-
-
-def _ceil2(n: int) -> int:
-    """Round n up to the nearest multiple of 2 (i.e. make even)."""
-    return n if n % 2 == 0 else n + 1
-
-
-def nibbles_per_row(stitches: int) -> int:
-    """
-    Number of nibbles required to store one row of `stitches` stitches.
-    Stitch count is rounded up to the nearest multiple of 4 (nibble-aligned).
-    """
-    return _ceil4(stitches) // 4
-
-
-def bytes_per_pattern(stitches: int, rows: int) -> int:
-    """
-    Total bytes required to store pattern pixel data (not including memo).
-    """
-    nibbles = rows * nibbles_per_row(stitches)
-    return _ceil2(nibbles) // 2
-
-
-def bytes_for_memo(rows: int) -> int:
-    """
-    Total bytes required for the memo block (1 nibble per row, byte-aligned).
-    """
-    return _ceil2(rows) // 2
-
-
-def bytes_per_pattern_and_memo(stitches: int, rows: int) -> int:
-    """Total bytes consumed by one pattern entry (data + memo)."""
-    return bytes_per_pattern(stitches, rows) + bytes_for_memo(rows)
-
-
-# ---------------------------------------------------------------------------
-# BCD helpers
-# ---------------------------------------------------------------------------
-
-
-def _bcd_encode_3digit(value: int) -> tuple[int, int, int]:
-    """
-    Encode a 3-digit decimal value as (hundreds, tens, ones) nibbles.
-    Each element is 0–9.
-    """
-    if not (0 <= value <= 999):
-        raise ValueError(f"Value {value} out of BCD 3-digit range 0–999")
-    hundreds = value // 100
-    tens = (value % 100) // 10
-    ones = value % 10
-    return hundreds, tens, ones
-
-
-def _bcd_decode_3digit(hundreds: int, tens: int, ones: int) -> int:
-    """Decode three BCD nibbles back to an integer."""
-    return 100 * hundreds + 10 * tens + ones
-
-
-# ---------------------------------------------------------------------------
-# Nibble-level read/write (backward addressing)
-# ---------------------------------------------------------------------------
-
-
-def _read_nibble(data: bytearray | bytes, base: int, nibble_index: int) -> int:
-    """
-    Read a single nibble from `data`.
-
-    Nibbles are numbered from `base` and advance BACKWARD through `data`:
-      nibble 0 → LSN of data[base]
-      nibble 1 → MSN of data[base]
-      nibble 2 → LSN of data[base - 1]
-      nibble 3 → MSN of data[base - 1]
-      ...
-
-    Returns an integer 0–15.
-    """
-    byte_offset = base - (nibble_index // 2)
-    byte_val = data[byte_offset]
-    if nibble_index % 2 == 0:
-        return byte_val & 0x0F  # LSN
-    else:
-        return (byte_val & 0xF0) >> 4  # MSN
-
-
-def _write_nibble(data: bytearray, base: int, nibble_index: int, value: int) -> None:
-    """
-    Write a single nibble (0–15) into `data` using the same backward addressing
-    as _read_nibble.  Only the target nibble is modified; the other nibble in
-    the same byte is preserved.
-    """
-    if not (0 <= value <= 15):
-        raise ValueError(f"Nibble value {value} out of range 0–15")
-    byte_offset = base - (nibble_index // 2)
-    if nibble_index % 2 == 0:
-        # Write LSN, preserve MSN
-        data[byte_offset] = (data[byte_offset] & 0xF0) | (value & 0x0F)
-    else:
-        # Write MSN, preserve LSN
-        data[byte_offset] = (data[byte_offset] & 0x0F) | ((value & 0x0F) << 4)
-
-
 # ---------------------------------------------------------------------------
 # Row encode / decode
 # ---------------------------------------------------------------------------
@@ -343,7 +245,7 @@ def encode_row(pixels: Sequence[int], stitches: int) -> list[int]:
         raise ValueError(f"Expected {stitches} pixels for this row, got {len(pixels)}")
     npr = nibbles_per_row(stitches)
     nibble_list: list[int] = []
-    padded = list(pixels) + [0] * (_ceil4(stitches) - stitches)
+    padded = list(pixels) + [0] * (ceil4(stitches) - stitches)
     for n in range(npr):
         s = n * 4
         nibble = (
@@ -405,7 +307,7 @@ def encode_pattern_data(
         raise ValueError(f"Expected {rows} rows, got {len(pixel_rows)}")
     npr = nibbles_per_row(stitches)
     total_nibbles = rows * npr
-    total_bytes = _ceil2(total_nibbles) // 2
+    total_bytes = ceil2(total_nibbles) // 2
 
     result = bytearray(total_bytes)
     base = total_bytes - 1  # local base within result
@@ -414,7 +316,7 @@ def encode_pattern_data(
         row_nibbles = encode_row(row_pixels, stitches)
         for local_nib_idx, nib_val in enumerate(row_nibbles):
             nibble_index = row_idx * npr + local_nib_idx
-            _write_nibble(result, base, nibble_index, nib_val)
+            write_nibble(result, base, nibble_index, nib_val)
 
     return result
 
@@ -438,7 +340,7 @@ def decode_pattern_data(
     pixel_rows: list[list[int]] = []
     for row_idx in range(rows):
         nibble_list = [
-            _read_nibble(data, pattern_offset, row_idx * npr + local_nib)
+            read_nibble(data, pattern_offset, row_idx * npr + local_nib)
             for local_nib in range(npr)
         ]
         pixel_rows.append(decode_row(nibble_list, stitches))
@@ -468,7 +370,7 @@ def encode_memo(rows: int, memo_values: Sequence[int] | None = None) -> bytearra
     base = total_bytes - 1
 
     for row_idx in range(rows):
-        _write_nibble(result, base, row_idx, values[row_idx] & 0x0F)
+        write_nibble(result, base, row_idx, values[row_idx] & 0x0F)
 
     return result
 
@@ -482,7 +384,7 @@ def decode_memo(
     Decode the memo block from `data` at `memo_offset`.
     Returns a list of `rows` nibble values (0–15).
     """
-    return [_read_nibble(data, memo_offset, row_idx) for row_idx in range(rows)]
+    return [read_nibble(data, memo_offset, row_idx) for row_idx in range(rows)]
 
 
 # ---------------------------------------------------------------------------
@@ -569,9 +471,9 @@ def encode_directory_entry(
     flag = (reversed_addr >> 8) & 0xFF
     ptr_low = reversed_addr & 0xFF
 
-    rh, rt, ro = _bcd_encode_3digit(rows)
-    sh, st, so = _bcd_encode_3digit(stitches)
-    ph, pt, po = _bcd_encode_3digit(number)
+    rh, rt, ro = bcd_encode_3digit(rows)
+    sh, st, so = bcd_encode_3digit(stitches)
+    ph, pt, po = bcd_encode_3digit(number)
 
     entry = bytes(
         [
@@ -613,9 +515,9 @@ def decode_directory_entry(raw: bytes | bytearray) -> PatternEntry | None:
     pt = (raw[6] & 0xF0) >> 4
     po = raw[6] & 0x0F
 
-    rows = _bcd_decode_3digit(rh, rt, ro)
-    stitches = _bcd_decode_3digit(sh, st, so)
-    number = _bcd_decode_3digit(ph, pt, po)
+    rows = bcd_decode_3digit(rh, rt, ro)
+    stitches = bcd_decode_3digit(sh, st, so)
+    number = bcd_decode_3digit(ph, pt, po)
 
     return PatternEntry(
         number=number,
@@ -661,9 +563,9 @@ def encode_directory_entry_940(
     flag = (data_offset >> 8) & 0xFF
     ptr_low = data_offset & 0xFF
 
-    rh, rt, ro = _bcd_encode_3digit(rows)
-    sh, st, so = _bcd_encode_3digit(stitches)
-    ph, pt, po = _bcd_encode_3digit(number)
+    rh, rt, ro = bcd_encode_3digit(rows)
+    sh, st, so = bcd_encode_3digit(stitches)
+    ph, pt, po = bcd_encode_3digit(number)
 
     entry = bytes(
         [
@@ -694,7 +596,7 @@ def decode_directory_entry_940(raw: bytes | bytearray) -> PatternEntry | None:
         )
 
     # Empty / FINHDR / unused: first byte is 0x55
-    if raw[0] == KH940_FILL_BYTE:
+    if raw[0] == KH940_FILL_BYTE or raw[0] == 0:
         return None
 
     flag = raw[0]
@@ -709,9 +611,9 @@ def decode_directory_entry_940(raw: bytes | bytearray) -> PatternEntry | None:
     pt = (raw[6] & 0xF0) >> 4
     po = raw[6] & 0x0F
 
-    rows = _bcd_decode_3digit(rh, rt, ro)
-    stitches = _bcd_decode_3digit(sh, st, so)
-    number = _bcd_decode_3digit(ph, pt, po)
+    rows = bcd_decode_3digit(rh, rt, ro)
+    stitches = bcd_decode_3digit(sh, st, so)
+    number = bcd_decode_3digit(ph, pt, po)
 
     return PatternEntry(
         number=number,
@@ -730,7 +632,7 @@ def _encode_finhdr_940(slot_index: int, next_number: int) -> tuple[int, bytes]:
     The FINHDR marks the end of the pattern list.  Bytes 0–4 = 0x55;
     bytes 5–6 encode the next unused pattern number in BCD.
     """
-    ph, pt, po = _bcd_encode_3digit(next_number)
+    ph, pt, po = bcd_encode_3digit(next_number)
     entry = bytes(
         [
             KH940_FILL_BYTE,  # 0
@@ -768,17 +670,32 @@ def generate_sector_id(psn: int) -> bytes:
     """
     if not (0 <= psn < NUM_SECTORS):
         raise ValueError(f"PSN {psn} out of range 0–{NUM_SECTORS - 1}")
+
+    # FIXME TEMPORARY JUST TO SEE IF THIS WORKS OR CHANGES THINGS OR WHATEVER
+
+    if psn < 32:
+        return bytes([1] + [0] * 11)
+
+    return bytes([0] * 12)
+
+    # END FIXME SECTION!!!!
+
     track = psn // 2
     checksum = 0x05FA - psn - track
     return bytes(
         [
-            psn & 0xFF,          # byte 0: PSN low
-            (psn >> 8) & 0xFF,   # byte 1: PSN high
-            track & 0xFF,        # byte 2: track low
-            (track >> 8) & 0xFF, # byte 3: track high
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  # bytes 4–9: fixed zeros
+            psn & 0xFF,  # byte 0: PSN low
+            (psn >> 8) & 0xFF,  # byte 1: PSN high
+            track & 0xFF,  # byte 2: track low
+            (track >> 8) & 0xFF,  # byte 3: track high
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,  # bytes 4–9: fixed zeros
             (checksum >> 8) & 0xFF,  # byte 10: checksum high
-            checksum & 0xFF,         # byte 11: checksum low
+            checksum & 0xFF,  # byte 11: checksum low
         ]
     )
 
@@ -1005,8 +922,9 @@ class DiskImage:
             (= the memo block's last byte = memo_offset).
             = KH940_REVERSED_BASE - memo_offset_of_last_pattern
         last_top:
-            Reversed-address offset of the first byte of the last pattern's
-            DATA block (not the memo, and not the combined block start).
+            Reversed-address offset of the first byte of the combined 
+            pattern+memo block, which is also the first byte of the DATA 
+            section since DATA sits below MEMO in memory.
             = KH940_REVERSED_BASE - pattern_offset_of_last_pattern
         last_number:
             Pattern number of the last created pattern (901–999).
@@ -1035,7 +953,7 @@ class DiskImage:
         self._data[base + 0x16] = 0x00  # UNK4
 
         # LOADED_PATTERN at 0x7FEA
-        ph, pt, po = _bcd_encode_3digit(last_number)
+        ph, pt, po = bcd_encode_3digit(last_number)
         self._data[KH940_LOADED_PATTERN_ADDR] = (0x1 << 4) | ph
         self._data[KH940_LOADED_PATTERN_ADDR + 1] = (pt << 4) | po
 
@@ -1053,10 +971,10 @@ class DiskImage:
         #               memo block, which is the last byte of the whole entry).
         memo_rev = KH940_REVERSED_BASE - last.memo_offset
 
-        # LAST_TOP = reversed offset of the first byte of the pattern DATA
-        #            block (not the memo, not the combined start).
-        #            pattern_offset is the *last* byte of the DATA block, so
-        #            the first byte is at:
+        # LAST_TOP = Reversed-address offset of the first byte of the combined 
+        #            pattern+memo block, which is also the first byte of the DATA 
+        #            section since DATA sits below MEMO in memory.
+        #            The first byte is at:
         #              pat_first = pattern_offset - bytes_per_pattern(...) + 1
         pat_data_bytes = bytes_per_pattern(last.stitches, last.rows)
         pat_first = last.pattern_offset - pat_data_bytes + 1
@@ -1074,7 +992,7 @@ class DiskImage:
         # self._next_slot has already been incremented to include the pattern
         # we just wrote, so (self._next_slot * 7) is the file address of the
         # first byte of the FINHDR.
-        header_ptr = KH940_REVERSED_BASE - (self._next_slot * DIRECTORY_ENTRY_SIZE)
+        header_ptr = 0x8000 - (self._next_slot * DIRECTORY_ENTRY_SIZE) - 7
 
         self._write_940_control_data(
             next_ptr=next_ptr,

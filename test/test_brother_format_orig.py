@@ -58,18 +58,18 @@ class TestGeometry:
 class TestBCD:
     @pytest.mark.parametrize("value", [0, 1, 9, 99, 150, 200, 901, 999])
     def test_roundtrip(self, value):
-        h, t, o = bf._bcd_encode_3digit(value)
-        assert bf._bcd_decode_3digit(h, t, o) == value
+        h, t, o = bf.bcd_encode_3digit(value)
+        assert bf.bcd_decode_3digit(h, t, o) == value
 
     def test_out_of_range_raises(self):
         with pytest.raises(ValueError):
-            bf._bcd_encode_3digit(1000)
+            bf.bcd_encode_3digit(1000)
         with pytest.raises(ValueError):
-            bf._bcd_encode_3digit(-1)
+            bf.bcd_encode_3digit(-1)
 
     def test_digit_values_are_in_range(self):
         for v in range(0, 1000):
-            h, t, o = bf._bcd_encode_3digit(v)
+            h, t, o = bf.bcd_encode_3digit(v)
             assert 0 <= h <= 9
             assert 0 <= t <= 9
             assert 0 <= o <= 9
@@ -84,40 +84,40 @@ class TestNibbleIO:
     def test_write_and_read_lsn_msn(self):
         buf = bytearray(4)
         base = 3
-        bf._write_nibble(buf, base, 0, 0xA)  # nibble 0 → LSN of buf[3]
-        bf._write_nibble(buf, base, 1, 0xB)  # nibble 1 → MSN of buf[3]
-        bf._write_nibble(buf, base, 2, 0xC)  # nibble 2 → LSN of buf[2]
-        bf._write_nibble(buf, base, 3, 0xD)  # nibble 3 → MSN of buf[2]
+        bf.write_nibble(buf, base, 0, 0xA)  # nibble 0 → LSN of buf[3]
+        bf.write_nibble(buf, base, 1, 0xB)  # nibble 1 → MSN of buf[3]
+        bf.write_nibble(buf, base, 2, 0xC)  # nibble 2 → LSN of buf[2]
+        bf.write_nibble(buf, base, 3, 0xD)  # nibble 3 → MSN of buf[2]
         assert buf[3] == 0xBA
         assert buf[2] == 0xDC
-        assert bf._read_nibble(buf, base, 0) == 0xA
-        assert bf._read_nibble(buf, base, 1) == 0xB
-        assert bf._read_nibble(buf, base, 2) == 0xC
-        assert bf._read_nibble(buf, base, 3) == 0xD
+        assert bf.read_nibble(buf, base, 0) == 0xA
+        assert bf.read_nibble(buf, base, 1) == 0xB
+        assert bf.read_nibble(buf, base, 2) == 0xC
+        assert bf.read_nibble(buf, base, 3) == 0xD
 
     def test_write_preserves_other_nibble(self):
         buf = bytearray(1)
         base = 0
-        bf._write_nibble(buf, base, 0, 0x5)  # write LSN
-        bf._write_nibble(buf, base, 1, 0x3)  # write MSN — LSN must be preserved
+        bf.write_nibble(buf, base, 0, 0x5)  # write LSN
+        bf.write_nibble(buf, base, 1, 0x3)  # write MSN — LSN must be preserved
         assert buf[0] == 0x35
-        assert bf._read_nibble(buf, base, 0) == 0x5
-        assert bf._read_nibble(buf, base, 1) == 0x3
+        assert bf.read_nibble(buf, base, 0) == 0x5
+        assert bf.read_nibble(buf, base, 1) == 0x3
 
     def test_value_out_of_range_raises(self):
         buf = bytearray(1)
         with pytest.raises(ValueError):
-            bf._write_nibble(buf, 0, 0, 16)
+            bf.write_nibble(buf, 0, 0, 16)
         with pytest.raises(ValueError):
-            bf._write_nibble(buf, 0, 0, -1)
+            bf.write_nibble(buf, 0, 0, -1)
 
     def test_roundtrip_all_nibble_values(self):
         buf = bytearray(8)
         base = 7
         for i in range(16):
             for v in range(16):
-                bf._write_nibble(buf, base, i, v)
-                assert bf._read_nibble(buf, base, i) == v
+                bf.write_nibble(buf, base, i, v)
+                assert bf.read_nibble(buf, base, i) == v
 
 
 # ---------------------------------------------------------------------------
@@ -663,7 +663,7 @@ class TestDiskImage940:
         ph = b0 & 0x0F
         pt = (b1 & 0xF0) >> 4
         po = b1 & 0x0F
-        number = bf._bcd_decode_3digit(ph, pt, po)
+        number = bf.bcd_decode_3digit(ph, pt, po)
         assert number == 942
 
     def test_from_bytes_full_disk_image(self):
