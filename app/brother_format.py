@@ -430,14 +430,6 @@ class PatternEntry:
         """Absolute file address of the pattern data's base byte (just below memo)."""
         return self.memo_offset - bytes_for_memo(self.rows)
 
-    @property
-    def block_end_offset(self) -> int:
-        """
-        Absolute file address of the byte just below the entire pattern+memo block.
-        The next pattern's memo_offset will be at or above this address.
-        """
-        return self.memo_offset - bytes_per_pattern_and_memo(self.stitches, self.rows)
-
 
 def encode_directory_entry(
     slot_index: int,

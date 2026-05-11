@@ -36,7 +36,6 @@ from app.brother_format import (
     KH940_REVERSED_BASE,
     KH940_CONTROL_DATA_ADDR,
     KH940_LOADED_PATTERN_ADDR,
-    KH940_WORKING_REGION_SIZE,
     DIRECTORY_ENTRY_SIZE,
     SECTOR_SIZE,
 )
@@ -412,7 +411,7 @@ class TestWritePatternRoundTrip:
         decoded = disk.read_pattern(self.NUMBER)
         assert decoded == original_rows
 
-    def test_read_pattern_solid_ones(self):
+    def test_read_pattern_solid_ones(self, disk):
         rows = make_solid(1, 8, 4)
         d = DiskImage.blank(MachineModel.KH940)
         d.write_pattern(901, rows)
@@ -522,7 +521,7 @@ class TestMetadataAfterWrite:
         ), f"LOADED_PATTERN[0] = 0x{data[KH940_LOADED_PATTERN_ADDR]:02X}, expected 0x19"
         assert (
             data[KH940_LOADED_PATTERN_ADDR + 1] == 0x01
-        ), f"LOADED_PATTERN[1] = 0x{data[KH940_LOADED_PATTERN_ADDR+1]:02X}, expected 0x01"
+        ), f"LOADED_PATTERN[1] = 0x{data[KH940_LOADED_PATTERN_ADDR + 1]:02X}, expected 0x01"
 
     def test_finhdr_written_at_slot_1(self, disk_and_data):
         _, data = disk_and_data
