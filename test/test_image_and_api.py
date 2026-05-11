@@ -405,19 +405,30 @@ class TestPreview:
 
 
 class TestSendStatus:
+    def setup_method(self):
+        from app.api import _state
+
+        _state.tasks.clear()
+
+    def _post_send(self):
+        with patch("app.api.threading.Thread") as mock_thread:
+            mock_thread.return_value = MagicMock()
+            return client.post("/send")
+
     def test_unknown_task_id_returns_404(self):
         resp = client.get("/send/00000000-0000-0000-0000-000000000000")
         assert resp.status_code == 404
 
     def test_send_returns_task_id(self):
-        resp = client.post("/send")
+        resp = self._post_send()
         assert resp.status_code == 200
         body = resp.json()
         assert "task_id" in body
         assert body["status"] in ("pending", "running", "done", "error")
 
     def test_send_status_reachable_after_send(self):
-        send_resp = client.post("/send")
+        send_resp = self._post_send()
+        assert send_resp.status_code == 200, send_resp.json()
         task_id = send_resp.json()["task_id"]
         status_resp = client.get(f"/send/{task_id}")
         assert status_resp.status_code == 200

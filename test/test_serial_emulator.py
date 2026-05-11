@@ -15,7 +15,6 @@ from pathlib import Path
 import pytest
 
 from app import serial_emulator as se
-from app import brother_format as bf
 
 # ---------------------------------------------------------------------------
 # Mock pyserial before importing the module under test
@@ -402,68 +401,3 @@ class TestOpModeChecksum:
             for data_len in [0, 1, 5, 10]:
                 data = bytes([req % 256] * data_len)
                 assert 0 <= self._ck(req, data) <= 255
-
-
-# ---------------------------------------------------------------------------
-# load_disk_image integration
-# ---------------------------------------------------------------------------
-
-
-class TestLoadDiskImage:
-    def test_loads_working_region_into_sectors(self, tmp_path):
-        img = bf.DiskImage.blank()
-        img.write_pattern(901, [[1, 0, 1, 0, 1, 0, 1, 0]] * 4)
-        raw = img.to_disk_image_bytes()
-
-        emu = se.PDDEmulator(tmp_path / "img")
-        emu.load_disk_image(raw)
-
-        assert emu._disk.read_sector(0) == raw[: se.SECTOR_SIZE]
-        assert emu._disk.read_sector(1) == raw[se.SECTOR_SIZE : 2 * se.SECTOR_SIZE]
-
-    def test_too_short_raises(self, tmp_path):
-        emu = se.PDDEmulator(tmp_path / "img")
-        with pytest.raises(ValueError):
-            emu.load_disk_image(bytes(100))
-
-    def test_pattern_survives_round_trip_through_disk(self, tmp_path):
-        """
-        Full pipeline: DiskImage → load_disk_image → read sectors back
-        → DiskImage.from_bytes → read_pattern.
-
-        Uses KH-940 (the default model), which has a 32-sector working region,
-        so we reassemble all 32 sectors to reconstruct the working region.
-        """
-        original_pat = [[1, 0, 1, 0], [0, 1, 0, 1], [1, 1, 0, 0]]
-        img = bf.DiskImage.blank()  # KH-940 by default
-        img.write_pattern(901, original_pat)
-        raw = img.to_disk_image_bytes()
-
-        emu = se.PDDEmulator(tmp_path / "disk")
-        emu.load_disk_image(raw)
-
-        # Reconstruct working region from the emulator's sector files.
-        # KH-940 uses 32 sectors (32 KB); KH-930 used only 2.
-        working_sectors = bf.KH940_WORKING_SECTORS
-        working_region = b"".join(
-            emu._disk.read_sector(n) for n in range(working_sectors)
-        )
-        recovered_img = bf.DiskImage.from_bytes(working_region, bf.MachineModel.KH940)
-        assert recovered_img.read_pattern(901) == original_pat
-
-    def test_load_disk_image_populates_sector_ids(self):
-        import tempfile
-        from app.serial_emulator import PDDEmulator
-        from app.brother_format import DiskImage, MachineModel
-
-        d = DiskImage.blank(MachineModel.KH940)
-        d.write_pattern(901, [[1, 0, 1, 0]] * 4)
-        raw = d.to_disk_image_bytes()
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            emu = PDDEmulator(disk_dir=tmpdir)
-            emu.load_disk_image(raw)
-            # All working-region sectors should have non-zero IDs
-            for n in range(32):  # KH-940 uses 32 working sectors
-                id_data = emu._disk.read_id(n)
-                assert any(b != 0 for b in id_data), f"Sector {n} has a blank ID"

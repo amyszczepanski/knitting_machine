@@ -503,10 +503,12 @@ class TestMetadataAfterWrite:
         ), f"PATTERN_PTR=0x{actual:04X}, expected 0x{expected:04X}"
 
     def test_header_ptr_points_to_finhdr(self, disk_and_data):
-        disk, data = disk_and_data
-        # After one pattern, FINHDR is at slot 1, file address = 1 × 7 = 7
-        finhdr_file_addr = 1 * DIRECTORY_ENTRY_SIZE
-        expected = KH940_REVERSED_BASE - finhdr_file_addr
+        _, data = disk_and_data
+        # HEADER_PTR points to the byte just past the FINHDR sentinel entry,
+        # i.e. 0x8000 minus (n_patterns + 1) * 7. The extra 7 accounts for
+        # the FINHDR itself. Validated against hardware and a reference
+        # implementation (kh940.py).
+        expected = 0x8000 - 2 * DIRECTORY_ENTRY_SIZE  # 1 pattern + FINHDR
         actual = read_u16_be(data, KH940_CONTROL_DATA_ADDR + 0x10)
         assert (
             actual == expected
