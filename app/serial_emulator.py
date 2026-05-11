@@ -492,7 +492,7 @@ class PDDEmulator:
             else:
                 # Not a ZZ preamble — re-dispatch the second byte rather than
                 # discarding it, to avoid a one-byte misalignment.
-                self._dispatch(io, chr(second[0]))
+                self._dispatch(io, chr(second))
 
     # ------------------------------------------------------------------
     # OpMode
@@ -544,7 +544,7 @@ class PDDEmulator:
                 # Second byte wasn't Z, so this wasn't a ZZ preamble.
                 # Dispatch the peeked byte as a normal FDC command rather
                 # than discarding it, to avoid a one-byte misalignment.
-                self._handle_fdc(io, chr(peek[0]))
+                self._handle_fdc(io, chr(peek))
             return
 
         logger.debug("FDC command: %r (0x%02X)", cmd, ord(cmd))

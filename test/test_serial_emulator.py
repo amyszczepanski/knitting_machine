@@ -21,9 +21,9 @@ from app import serial_emulator as se
 # ---------------------------------------------------------------------------
 
 _serial_mock = types.ModuleType("serial")
-_serial_mock.PARITY_NONE = "N"
-_serial_mock.STOPBITS_ONE = 1
-_serial_mock.EIGHTBITS = 8
+_serial_mock.PARITY_NONE = "N"  # type: ignore[attr-defined]
+_serial_mock.STOPBITS_ONE = 1  # type: ignore[attr-defined]
+_serial_mock.EIGHTBITS = 8  # type: ignore[attr-defined]
 
 
 class _FakeSerial:
@@ -40,7 +40,7 @@ class _FakeSerial:
         pass
 
 
-_serial_mock.Serial = _FakeSerial
+_serial_mock.Serial = _FakeSerial  # type: ignore[attr-defined]
 sys.modules["serial"] = _serial_mock
 
 

@@ -22,7 +22,7 @@ from PIL import Image
 def _make_png_bytes(
     width: int = 10,
     height: int = 10,
-    color: int = 128,
+    color: int | tuple[int, int, int] = 128,
     mode: str = "L",
 ) -> bytes:
     """Return a minimal in-memory PNG as bytes."""
@@ -326,7 +326,7 @@ class TestWritePattern:
         png = png or _make_png_bytes()
         return client.post(
             "/pattern",
-            data={"number": number, "threshold": threshold},
+            data={"number": str(number), "threshold": str(threshold)},
             files={"file": ("test.png", png, "image/png")},
         )
 
