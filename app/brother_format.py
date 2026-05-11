@@ -922,8 +922,8 @@ class DiskImage:
             (= the memo block's last byte = memo_offset).
             = KH940_REVERSED_BASE - memo_offset_of_last_pattern
         last_top:
-            Reversed-address offset of the first byte of the combined 
-            pattern+memo block, which is also the first byte of the DATA 
+            Reversed-address offset of the first byte of the combined
+            pattern+memo block, which is also the first byte of the DATA
             section since DATA sits below MEMO in memory.
             = KH940_REVERSED_BASE - pattern_offset_of_last_pattern
         last_number:
@@ -971,8 +971,8 @@ class DiskImage:
         #               memo block, which is the last byte of the whole entry).
         memo_rev = KH940_REVERSED_BASE - last.memo_offset
 
-        # LAST_TOP = Reversed-address offset of the first byte of the combined 
-        #            pattern+memo block, which is also the first byte of the DATA 
+        # LAST_TOP = Reversed-address offset of the first byte of the combined
+        #            pattern+memo block, which is also the first byte of the DATA
         #            section since DATA sits below MEMO in memory.
         #            The first byte is at:
         #              pat_first = pattern_offset - bytes_per_pattern(...) + 1

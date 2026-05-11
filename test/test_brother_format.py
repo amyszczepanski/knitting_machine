@@ -41,10 +41,10 @@ from app.brother_format import (
     SECTOR_SIZE,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def read_u16_be(data: bytes | bytearray, addr: int) -> int:
     """Read a big-endian unsigned 16-bit integer at file address `addr`."""
@@ -58,10 +58,7 @@ def reversed_offset(file_addr: int) -> int:
 
 def make_checkerboard(stitches: int, rows: int) -> list[list[int]]:
     """Return a checkerboard pixel grid (alternating 0/1)."""
-    return [
-        [(i + j) % 2 for j in range(stitches)]
-        for i in range(rows)
-    ]
+    return [[(i + j) % 2 for j in range(stitches)] for i in range(rows)]
 
 
 def make_solid(value: int, stitches: int, rows: int) -> list[list[int]]:
@@ -72,6 +69,7 @@ def make_solid(value: int, stitches: int, rows: int) -> list[list[int]]:
 # ---------------------------------------------------------------------------
 # 1. Geometry helpers
 # ---------------------------------------------------------------------------
+
 
 class TestGeometry:
     def test_nibbles_per_row_exact_multiple(self):
@@ -106,6 +104,7 @@ class TestGeometry:
 # ---------------------------------------------------------------------------
 # 2. Row encode / decode round-trip
 # ---------------------------------------------------------------------------
+
 
 class TestRowEncoding:
     def test_all_zeros(self):
@@ -146,6 +145,7 @@ class TestRowEncoding:
 # ---------------------------------------------------------------------------
 # 3. Pattern data encode / decode round-trip
 # ---------------------------------------------------------------------------
+
 
 class TestPatternDataEncoding:
     def test_single_row_all_ones(self):
@@ -194,6 +194,7 @@ class TestPatternDataEncoding:
 # 4. Memo encode / decode round-trip
 # ---------------------------------------------------------------------------
 
+
 class TestMemoEncoding:
     def test_all_zeros(self):
         encoded = encode_memo(4, [0, 0, 0, 0])
@@ -223,11 +224,15 @@ class TestMemoEncoding:
 # 5. Directory entry encode / decode — KH-940
 # ---------------------------------------------------------------------------
 
+
 class TestDirectoryEntry940:
     def test_round_trip_basic(self):
         memo_offset = 0x7EDF  # initial pattern offset
         byte_offset, raw = encode_directory_entry_940(
-            slot_index=0, number=901, stitches=40, rows=20,
+            slot_index=0,
+            number=901,
+            stitches=40,
+            rows=20,
             memo_offset=memo_offset,
         )
         assert byte_offset == 0
@@ -240,7 +245,10 @@ class TestDirectoryEntry940:
     def test_memo_offset_round_trips(self):
         memo_offset = 0x7EDF
         _, raw = encode_directory_entry_940(
-            slot_index=0, number=901, stitches=40, rows=20,
+            slot_index=0,
+            number=901,
+            stitches=40,
+            rows=20,
             memo_offset=memo_offset,
         )
         entry = decode_directory_entry_940(raw)
@@ -249,7 +257,10 @@ class TestDirectoryEntry940:
     def test_slot_index_sets_byte_offset(self):
         for slot in range(5):
             byte_offset, _ = encode_directory_entry_940(
-                slot_index=slot, number=901 + slot, stitches=4, rows=2,
+                slot_index=slot,
+                number=901 + slot,
+                stitches=4,
+                rows=2,
                 memo_offset=0x7EDF,
             )
             assert byte_offset == slot * DIRECTORY_ENTRY_SIZE
@@ -261,7 +272,10 @@ class TestDirectoryEntry940:
     def test_pattern_number_bcd_extremes(self):
         for number in [901, 950, 999]:
             _, raw = encode_directory_entry_940(
-                slot_index=0, number=number, stitches=4, rows=2,
+                slot_index=0,
+                number=number,
+                stitches=4,
+                rows=2,
                 memo_offset=0x7EDF,
             )
             entry = decode_directory_entry_940(raw)
@@ -270,7 +284,10 @@ class TestDirectoryEntry940:
     def test_data_offset_field_is_reversed_address(self):
         memo_offset = 0x7EDF
         _, raw = encode_directory_entry_940(
-            slot_index=0, number=901, stitches=4, rows=2,
+            slot_index=0,
+            number=901,
+            stitches=4,
+            rows=2,
             memo_offset=memo_offset,
         )
         # DATA_OFFSET = bytes 0–1 as big-endian 16-bit
@@ -281,6 +298,7 @@ class TestDirectoryEntry940:
 # ---------------------------------------------------------------------------
 # 6. FINHDR sentinel
 # ---------------------------------------------------------------------------
+
 
 class TestFinhdr940:
     def test_bytes_0_to_4_are_fill(self):
@@ -307,6 +325,7 @@ class TestFinhdr940:
 # ---------------------------------------------------------------------------
 # 7. DiskImage blank initialisation — KH-940 metadata fields
 # ---------------------------------------------------------------------------
+
 
 class TestBlankDiskImage940:
     @pytest.fixture
@@ -366,6 +385,7 @@ class TestBlankDiskImage940:
 # 8. DiskImage.write_pattern — single-pattern round-trip
 # ---------------------------------------------------------------------------
 
+
 class TestWritePatternRoundTrip:
     STITCHES = 40
     ROWS = 20
@@ -419,6 +439,7 @@ class TestWritePatternRoundTrip:
 # 9. DiskImage metadata after write_pattern — KH-940 control block
 # ---------------------------------------------------------------------------
 
+
 class TestMetadataAfterWrite:
     STITCHES = 40
     ROWS = 20
@@ -444,7 +465,7 @@ class TestMetadataAfterWrite:
         _, data = disk_and_data
         base = KH940_CONTROL_DATA_ADDR
         unk3 = data[base + 0x0C : base + 0x10]
-        assert unk3 == b'\x00\x00\x81\x00', f"UNK3 = {unk3.hex()}"
+        assert unk3 == b"\x00\x00\x81\x00", f"UNK3 = {unk3.hex()}"
 
     def test_pattern_ptr1_equals_ptr0(self, disk_and_data):
         _, data = disk_and_data
@@ -469,9 +490,7 @@ class TestMetadataAfterWrite:
         pat_first = entry.pattern_offset - pat_bytes + 1
         expected = KH940_REVERSED_BASE - pat_first
         actual = read_u16_be(data, KH940_CONTROL_DATA_ADDR + 0x0A)
-        assert actual == expected, (
-            f"LAST_TOP=0x{actual:04X}, expected 0x{expected:04X}"
-        )
+        assert actual == expected, f"LAST_TOP=0x{actual:04X}, expected 0x{expected:04X}"
 
     def test_next_ptr_is_one_above_pattern_block(self, disk_and_data):
         disk, data = disk_and_data
@@ -480,9 +499,9 @@ class TestMetadataAfterWrite:
         pat_first = entry.pattern_offset - pat_bytes + 1
         expected = KH940_REVERSED_BASE - (pat_first - 1)
         actual = read_u16_be(data, KH940_CONTROL_DATA_ADDR + 0x00)
-        assert actual == expected, (
-            f"PATTERN_PTR=0x{actual:04X}, expected 0x{expected:04X}"
-        )
+        assert (
+            actual == expected
+        ), f"PATTERN_PTR=0x{actual:04X}, expected 0x{expected:04X}"
 
     def test_header_ptr_points_to_finhdr(self, disk_and_data):
         disk, data = disk_and_data
@@ -490,33 +509,34 @@ class TestMetadataAfterWrite:
         finhdr_file_addr = 1 * DIRECTORY_ENTRY_SIZE
         expected = KH940_REVERSED_BASE - finhdr_file_addr
         actual = read_u16_be(data, KH940_CONTROL_DATA_ADDR + 0x10)
-        assert actual == expected, (
-            f"HEADER_PTR=0x{actual:04X}, expected 0x{expected:04X}"
-        )
+        assert (
+            actual == expected
+        ), f"HEADER_PTR=0x{actual:04X}, expected 0x{expected:04X}"
 
     def test_loaded_pattern_matches_written_number(self, disk_and_data):
         _, data = disk_and_data
         # LOADED_PATTERN for 901: byte0 = 0x19 (0x1N where N=hundreds=9),
         # byte1 = 0x01 (tens=0, ones=1)
-        assert data[KH940_LOADED_PATTERN_ADDR] == 0x19, (
-            f"LOADED_PATTERN[0] = 0x{data[KH940_LOADED_PATTERN_ADDR]:02X}, expected 0x19"
-        )
-        assert data[KH940_LOADED_PATTERN_ADDR + 1] == 0x01, (
-            f"LOADED_PATTERN[1] = 0x{data[KH940_LOADED_PATTERN_ADDR+1]:02X}, expected 0x01"
-        )
+        assert (
+            data[KH940_LOADED_PATTERN_ADDR] == 0x19
+        ), f"LOADED_PATTERN[0] = 0x{data[KH940_LOADED_PATTERN_ADDR]:02X}, expected 0x19"
+        assert (
+            data[KH940_LOADED_PATTERN_ADDR + 1] == 0x01
+        ), f"LOADED_PATTERN[1] = 0x{data[KH940_LOADED_PATTERN_ADDR+1]:02X}, expected 0x01"
 
     def test_finhdr_written_at_slot_1(self, disk_and_data):
         _, data = disk_and_data
         slot1_start = 1 * DIRECTORY_ENTRY_SIZE
         finhdr = data[slot1_start : slot1_start + DIRECTORY_ENTRY_SIZE]
-        assert finhdr[:5] == bytes([0x55] * 5), (
-            f"FINHDR bytes 0–4 = {finhdr[:5].hex()}, expected 5555555555"
-        )
+        assert finhdr[:5] == bytes(
+            [0x55] * 5
+        ), f"FINHDR bytes 0–4 = {finhdr[:5].hex()}, expected 5555555555"
 
 
 # ---------------------------------------------------------------------------
 # 10. DiskImage — multiple patterns and serialisation
 # ---------------------------------------------------------------------------
+
 
 class TestMultiplePatterns:
     def test_two_patterns_both_round_trip(self):
@@ -548,7 +568,7 @@ class TestMultiplePatterns:
         d.write_pattern(901, make_checkerboard(4, 4))
         raw = d.to_disk_image_bytes()
         working = d.working_region_bytes()
-        assert raw[:len(working)] == working
+        assert raw[: len(working)] == working
 
     def test_from_bytes_round_trip(self):
         rows = make_checkerboard(40, 20)
