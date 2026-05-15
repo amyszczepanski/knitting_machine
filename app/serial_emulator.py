@@ -359,7 +359,7 @@ class PDDEmulator:
 
     def run(
         self,
-        port: str = "/dev/tty.usbserial-FT3Q58M1",
+        port: str = "",
         baudrate: int = 9600,
         idle_timeout: int = 300,
     ) -> None:

@@ -58,6 +58,7 @@ from pydantic import BaseModel
 
 from app.brother_format import DiskImage, MachineModel
 from app.image import ImageError, load_image
+from app.ports import PortDiscoveryError, PortInfo, discover_ftdi_port, list_all_ports
 
 # ---------------------------------------------------------------------------
 # Logging setup
@@ -122,7 +123,8 @@ class _AppState:
     def __init__(self) -> None:
         self.model: MachineModel = MachineModel.KH940
         self.disk: DiskImage = DiskImage.blank(self.model)
-        self.serial_port: str = "/dev/tty.usbserial-FT3Q58M1"
+        # My cable is /dev/tty.usbserial-FT3Q58M1
+        self.serial_port: str = ""
         self.baud_rate: int = 9600
         self.disk_dir: str = "/tmp/knitting_disk"
         self.tasks: dict[str, "_TaskState"] = {}
@@ -136,6 +138,34 @@ class _AppState:
 
 
 _state = _AppState()
+
+
+@app.on_event("startup")
+def _startup_discover_port() -> None:
+    """Attempt FTDI port discovery when the server starts.
+
+    On success, _state.serial_port is set and a single INFO line is logged.
+    On failure, _state.serial_port is left as an empty string and a WARNING
+    is logged.  POST /send and POST /receive will refuse to run until the
+    port is set via PUT /config.
+    """
+    try:
+        port = discover_ftdi_port()
+        _state.serial_port = port.device
+        log.info(
+            "Auto-discovered FTDI serial port: %s (%s)",
+            port.device,
+            port.description,
+        )
+    except PortDiscoveryError as exc:
+        _state.serial_port = ""
+        log.warning(
+            "Port auto-discovery failed: %s  "
+            "Use PUT /config to set the port manually.  "
+            "Available ports: %s",
+            exc,
+            [p.device for p in exc.all_ports] or "none",
+        )
 
 
 class _TaskStatus(str, Enum):
@@ -203,6 +233,33 @@ class ConfigResponse(BaseModel):
     serial_port: str
     baud_rate: int
     disk_dir: str
+
+
+class PortInfoResponse(BaseModel):
+    device: str
+    description: str
+    manufacturer: str | None
+    vid: str | None  # rendered as hex string, e.g. "0x0403"
+    pid: str | None
+    serial_number: str | None
+    is_ftdi: bool
+
+
+class PortListResponse(BaseModel):
+    ports: list[PortInfoResponse]
+    ftdi_candidates: list[str]  # device names only, for quick scanning
+
+
+def _port_info_to_response(p: PortInfo) -> PortInfoResponse:
+    return PortInfoResponse(
+        device=p.device,
+        description=p.description,
+        manufacturer=p.manufacturer,
+        vid=hex(p.vid) if p.vid is not None else None,
+        pid=hex(p.pid) if p.pid is not None else None,
+        serial_number=p.serial_number,
+        is_ftdi=p.is_ftdi,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -379,6 +436,27 @@ def _run_send(task_id: str) -> None:
         log.error("[%s] Send task failed: %s", task_id, exc, exc_info=True)
 
 
+def _require_serial_port() -> str:
+    """Return the configured serial port, or raise HTTP 503.
+
+    The error body includes available ports so the client can present them
+    to the user without needing a separate GET /ports call.
+    """
+    if not _state.serial_port:
+        available = [_port_info_to_response(p) for p in list_all_ports()]
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": (
+                    "No serial port configured. "
+                    "Use PUT /config to set one, or GET /ports for available options."
+                ),
+                "available_ports": [p.model_dump() for p in available],
+            },
+        )
+    return _state.serial_port
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -495,10 +573,6 @@ def preview_image(
 def send_to_machine() -> SendResponse:
     """Serve the persisted sector files to the machine for a load operation.
 
-    The machine must have performed at least one save (POST /receive) before
-    this endpoint will succeed, because the sector IDs the machine needs to
-    locate its own data are only established during a save.
-
     Returns a task_id; poll GET /send/{task_id} for status.
     """
     # Prevent two emulator tasks from opening the serial port simultaneously.
@@ -508,6 +582,8 @@ def send_to_machine() -> SendResponse:
                 status_code=409,
                 detail="An emulator task is already running. Wait for it to finish or stop it first.",
             )
+
+    _require_serial_port()  # raises 503 if no port is configured
 
     task_id = str(uuid.uuid4())
     _state.tasks[task_id] = _TaskState()
@@ -539,11 +615,9 @@ def receive_from_machine() -> SendResponse:
     IDs — and on completion:
 
       1. Persists the sector files (including machine-written IDs) so that
-         a subsequent POST /send can serve them back correctly.
+         they can be examined or reused (if necessary).
       2. Rebuilds the in-memory DiskImage from the received data so that
          GET /patterns reflects what was just saved.
-
-    This must be called at least once before POST /send will work.
 
     Returns a task_id; poll GET /send/{task_id} for status.
     """
@@ -554,6 +628,8 @@ def receive_from_machine() -> SendResponse:
                 status_code=409,
                 detail="An emulator task is already running. Wait for it to finish or stop it first.",
             )
+
+    _require_serial_port()  # raises 503 if no port is configured
 
     task_id = str(uuid.uuid4())
     _state.tasks[task_id] = _TaskState()
@@ -620,3 +696,17 @@ def reset_disk() -> dict[str, str]:
     _state.disk = DiskImage.blank(_state.model)
     log.info("Disk image reset to blank")
     return {"status": "ok", "detail": "Disk image reset to blank."}
+
+
+@app.get("/ports", response_model=PortListResponse)
+def list_ports() -> PortListResponse:
+    """Return all available serial ports and flag FTDI candidates.
+
+    Useful when auto-discovery fails and the user needs to call PUT /config
+    to specify a port manually.
+    """
+    ports = list_all_ports()
+    return PortListResponse(
+        ports=[_port_info_to_response(p) for p in ports],
+        ftdi_candidates=[p.device for p in ports if p.is_ftdi],
+    )
