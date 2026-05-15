@@ -45,6 +45,8 @@ import logging.handlers
 import os
 import threading
 import uuid
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -93,25 +95,6 @@ log.propagate = False  # don't double-log via the root logger
 logging.getLogger("app.serial_emulator").setLevel(_log_level)
 
 # ---------------------------------------------------------------------------
-# Application & CORS
-# ---------------------------------------------------------------------------
-
-app = FastAPI(
-    title="Knitting Machine API",
-    description="Brother KH-940 pattern management and upload.",
-    version="0.1.0",
-)
-
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # tighten in production
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# ---------------------------------------------------------------------------
 # Application state
 # ---------------------------------------------------------------------------
 
@@ -140,7 +123,6 @@ class _AppState:
 _state = _AppState()
 
 
-@app.on_event("startup")
 def _startup_discover_port() -> None:
     """Attempt FTDI port discovery when the server starts.
 
@@ -168,6 +150,38 @@ def _startup_discover_port() -> None:
             exc,
             [p.device for p in exc.all_ports] or "none",
         )
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    _startup_discover_port()
+    yield
+
+
+# ---------------------------------------------------------------------------
+# Application & CORS
+# ---------------------------------------------------------------------------
+
+app = FastAPI(
+    title="Knitting Machine API",
+    description="Brother KH-940 pattern management and upload.",
+    version="0.1.0",
+    lifespan=_lifespan,
+)
+
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # tighten in production
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ---------------------------------------------------------------------------
+# Moar state
+# ---------------------------------------------------------------------------
 
 
 class _TaskStatus(str, Enum):
