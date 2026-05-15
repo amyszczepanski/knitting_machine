@@ -149,6 +149,8 @@ def _startup_discover_port() -> None:
     is logged.  POST /send and POST /receive will refuse to run until the
     port is set via PUT /config.
     """
+    if _state.serial_port:
+        return
     try:
         port = discover_ftdi_port()
         _state.serial_port = port.device

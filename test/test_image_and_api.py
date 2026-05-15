@@ -9,10 +9,55 @@ from __future__ import annotations
 
 import base64
 import io
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
+
+# Patch sys.modules before any app.* imports so that heavy/hardware
+# dependencies are never imported by the real import machinery.
+
+_mock_disk = MagicMock()
+_mock_disk.max_rows = 500
+_mock_disk.read_pattern.return_value = []
+_mock_disk.write_pattern.return_value = None
+_mock_disk.to_disk_image_bytes.return_value = b"\x00" * 16
+
+_mock_disk_image_cls = MagicMock()
+_mock_disk_image_cls.blank.return_value = _mock_disk
+
+_mock_machine_model = MagicMock()
+_mock_machine_model.KH940 = "KH940"
+
+with patch.dict(
+    "sys.modules",
+    {
+        "serial": MagicMock(),
+        "serial.tools": MagicMock(),
+        "serial.tools.list_ports": MagicMock(),
+        "serial.tools.list_ports_common": MagicMock(),
+        "app.brother_format": MagicMock(
+            DiskImage=_mock_disk_image_cls,
+            MachineModel=_mock_machine_model,
+        ),
+        "app.serial_emulator": MagicMock(),
+        "app.ports": MagicMock(
+            discover_ftdi_port=MagicMock(return_value=MagicMock(device="/dev/ttyUSB0")),
+            list_all_ports=MagicMock(return_value=[]),
+            PortDiscoveryError=Exception,
+        ),
+    },
+):
+    import app.api as _api_module
+    from app.api import app  # noqa: E402
+    from app.image import ImageError, ImageResult, load_image  # noqa: E402
+    from fastapi.testclient import TestClient  # noqa: E402
+
+sys.modules["app.api"] = _api_module
+_state = _api_module._state
+client = TestClient(app)
+
 
 # ---------------------------------------------------------------------------
 # Helpers shared by both test modules
@@ -39,8 +84,6 @@ def _make_rgb_png_bytes(width: int = 10, height: int = 10) -> bytes:
 # ===========================================================================
 # image.py tests
 # ===========================================================================
-
-from app.image import ImageError, ImageResult, load_image  # noqa: E402
 
 
 class TestLoadImageInputTypes:
@@ -263,39 +306,11 @@ class TestCrop:
 # api.py tests  (uses FastAPI TestClient)
 # ===========================================================================
 
-from fastapi.testclient import TestClient  # noqa: E402
-
-# We need to mock the heavy dependencies before importing the app module so
-# that tests don't require app.brother_format or app.serial_emulator to exist.
-
-_mock_disk = MagicMock()
-_mock_disk.max_rows = 500
-_mock_disk.read_pattern.return_value = []  # no patterns by default
-_mock_disk.write_pattern.return_value = None
-_mock_disk.to_disk_image_bytes.return_value = b"\x00" * 16
-
-_mock_disk_image_cls = MagicMock()
-_mock_disk_image_cls.blank.return_value = _mock_disk
-
-_mock_machine_model = MagicMock()
-_mock_machine_model.KH940 = "KH940"
-
-with patch.dict(
-    "sys.modules",
-    {
-        "app.brother_format": MagicMock(
-            DiskImage=_mock_disk_image_cls,
-            MachineModel=_mock_machine_model,
-        ),
-        "app.serial_emulator": MagicMock(),
-    },
-):
-    from app.api import app  # noqa: E402 — import after patching
-
-client = TestClient(app)
-
 
 class TestListPatterns:
+    def setup_method(self):
+        _state.disk = _mock_disk
+
     def test_empty_disk_returns_empty_list(self):
         _mock_disk.read_pattern.return_value = []
         resp = client.get("/patterns")
@@ -406,12 +421,14 @@ class TestPreview:
 
 class TestSendStatus:
     def setup_method(self):
-        from app.api import _state
-
         _state.tasks.clear()
+        _state.serial_port = "/dev/ttyUSB0"
+
+    def teardown_method(self):
+        _state.serial_port = ""
 
     def _post_send(self):
-        with patch("app.api.threading.Thread") as mock_thread:
+        with patch("threading.Thread") as mock_thread:
             mock_thread.return_value = MagicMock()
             return client.post("/send")
 
