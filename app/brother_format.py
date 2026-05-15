@@ -657,48 +657,16 @@ def generate_sector_id(psn: int) -> bytes:
     """
     Generate the 12-byte sector ID for physical sector number `psn` (0–79).
 
-    The format was reverse-engineered from a real KH-940 capture and follows
-    this layout:
-
-      Bytes 0–1:   psn as little-endian uint16
-      Bytes 2–3:   track number (psn // 2) as little-endian uint16
-      Bytes 4–9:   0x00 × 6  (fixed)
-      Bytes 10–11: (0x05FA - psn - psn // 2) as big-endian uint16
-
-    The checksum in bytes 10–11 decreases by 1 or 2 with each sector
-    (alternating) because it subtracts both the sector number and the track
-    number, and every two sectors the track increments by one.
+    This seems to work and is based on the general consensus found in assorted
+    other people's projects I found on the internet
     """
     if not (0 <= psn < NUM_SECTORS):
         raise ValueError(f"PSN {psn} out of range 0–{NUM_SECTORS - 1}")
-
-    # FIXME TEMPORARY JUST TO SEE IF THIS WORKS OR CHANGES THINGS OR WHATEVER
 
     if psn < 32:
         return bytes([1] + [0] * 11)
 
     return bytes([0] * 12)
-
-    # END FIXME SECTION!!!!
-
-    track = psn // 2
-    checksum = 0x05FA - psn - track
-    return bytes(
-        [
-            psn & 0xFF,  # byte 0: PSN low
-            (psn >> 8) & 0xFF,  # byte 1: PSN high
-            track & 0xFF,  # byte 2: track low
-            (track >> 8) & 0xFF,  # byte 3: track high
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,  # bytes 4–9: fixed zeros
-            (checksum >> 8) & 0xFF,  # byte 10: checksum high
-            checksum & 0xFF,  # byte 11: checksum low
-        ]
-    )
 
 
 # ---------------------------------------------------------------------------
