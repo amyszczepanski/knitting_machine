@@ -25,6 +25,10 @@ _mock_disk_image_cls = MagicMock()
 _mock_machine_model = MagicMock()
 _mock_machine_model.KH940 = "KH940"
 
+from PIL import Image as _PIL_Image  # noqa: E402
+
+_PIL_Image.preinit()
+
 with patch.dict(
     "sys.modules",
     {

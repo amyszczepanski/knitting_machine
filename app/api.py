@@ -285,6 +285,7 @@ def _port_info_to_response(p: PortInfo) -> PortInfoResponse:
 
 
 def _bytes_from_upload(upload: UploadFile) -> bytes:
+    upload.file.seek(0)
     data = upload.file.read()
     if not data:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")

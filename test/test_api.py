@@ -27,6 +27,10 @@ _mock_disk_image_cls.blank.return_value = _mock_disk
 _mock_machine_model = MagicMock()
 _mock_machine_model.KH940 = "KH940"
 
+from PIL import Image as _PIL_Image  # noqa: E402
+
+_PIL_Image.preinit()
+
 with patch.dict(
     "sys.modules",
     {
@@ -89,6 +93,9 @@ class TestListPatterns:
 
 
 class TestWritePattern:
+    def setup_method(self):
+        _state.disk = _mock_disk
+
     def _upload(
         self, number: int = 901, threshold: int = 128, png: bytes | None = None
     ):
@@ -129,6 +136,9 @@ class TestWritePattern:
 
 
 class TestPreview:
+    def setup_method(self):
+        _state.disk = _mock_disk
+
     def test_valid_image_returns_data_uri(self):
 
         resp = client.post(
@@ -245,6 +255,9 @@ class TestConfig:
 
 
 class TestResetDisk:
+    def setup_method(self):
+        _state.disk = _mock_disk
+
     def test_delete_disk_returns_ok(self):
         resp = client.delete("/disk")
         assert resp.status_code == 200
