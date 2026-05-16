@@ -36,3 +36,4 @@ skip-string-normalization = false
 
 [tool.mypy]
 explicit_package_bases = true
+mypy_path = "tests"

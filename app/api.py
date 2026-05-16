@@ -189,6 +189,7 @@ class _TaskStatus(str, Enum):
     RUNNING = "running"
     DONE = "done"
     ERROR = "error"
+    TIMED_OUT = "timed_out"
 
 
 @dataclass
@@ -312,11 +313,6 @@ def _run_receive(task_id: str) -> None:
     persists the full sector state into _state.sector_dat / _state.sector_id.
     The in-memory DiskImage is then rebuilt from the received data so that
     GET /patterns reflects what was saved.
-
-    The persisted sector files (including the machine-written IDs) are what
-    make subsequent load operations work: on the next POST /send the emulator
-    will serve those same files back and the machine will recognise its own
-    sector IDs.
     """
     task = _state.tasks[task_id]
     task.status = _TaskStatus.RUNNING
@@ -440,11 +436,25 @@ def _run_send(task_id: str) -> None:
                 port,
                 baud,
             )
-            emulator.run(port=port, baudrate=baud, idle_timeout=300)
-            log.info("[%s] emulator.run() returned — transfer complete", task_id)
+            # This hardcodes in sector 31, which is the end of the data for the KH-940
+            emulator.run(port=port, baudrate=baud, stop_after_sector=31)
 
-        task.status = _TaskStatus.DONE
-        log.info("[%s] Send task finished successfully", task_id)
+            expected = 32
+            if emulator._sectors_sent >= expected:
+                task.status = _TaskStatus.DONE
+                log.info(
+                    "[%s] Send task finished successfully — all %d sectors sent",
+                    task_id,
+                    expected,
+                )
+            else:
+                task.status = _TaskStatus.TIMED_OUT
+                log.warning(
+                    "[%s] Send task timed out — only %d of %d sectors sent",
+                    task_id,
+                    emulator._sectors_sent,
+                    expected,
+                )
 
     except Exception as exc:
         task.status = _TaskStatus.ERROR

@@ -352,6 +352,8 @@ class PDDEmulator:
         self._verbose = verbose
         self._fdc_mode = False
         self._stop_event = threading.Event()
+        self._stop_after_sector: int | None = None
+        self._sectors_sent: int = 0
 
     # ------------------------------------------------------------------
     # Public interface
@@ -361,7 +363,8 @@ class PDDEmulator:
         self,
         port: str = "",
         baudrate: int = 9600,
-        idle_timeout: int = 300,
+        idle_timeout: int = 60,
+        stop_after_sector: int | None = None,
     ) -> None:
         """
         Open the serial port and run the emulator loop (blocking).
@@ -372,13 +375,16 @@ class PDDEmulator:
           machine has gone quiet between top-level commands).  The counter
           resets to zero each time a byte is received, so a slow but active
           transfer will never trigger it.
+        - stop_after_sector is set and that sector has successfully been served
+          The KH-940 sends sectors 0-31; the KH-930 sends only 2? sectors.
 
-        `idle_timeout` is intentionally not exposed in the API config; it is
-        a temporary parameter that will become unnecessary once sector IDs are
-        constructed locally rather than fetched from the machine.
+        `idle_timeout` is a fallback for unexpected disconnections.
+        For normal send operations prefer stop_after_sector for a clean exit.
+        Note that you must initiate a transfer within this much time!
 
         Call stop() from another thread to request a clean shutdown.
         """
+        self._sectors_sent = 0
         ser = serial.Serial(
             port=port,
             baudrate=baudrate,
@@ -396,6 +402,7 @@ class PDDEmulator:
         logger.info("PDDEmulator ready on %s at %d baud", port, baudrate)
         idle_seconds = 0
         try:
+            self._stop_after_sector = stop_after_sector
             while not self._stop_event.is_set():
                 b = ser.read(1)
                 if not b:
@@ -662,6 +669,13 @@ class PDDEmulator:
         if ack and chr(ack[0]) == "\r":
             io.write(data)
             logger.debug("Read sector %d: sent 1024 bytes", psn)
+            self._sectors_sent += 1
+            if self._stop_after_sector is not None and psn >= self._stop_after_sector:
+                logger.info(
+                    "Sector %d served — all sectors sent, stopping emulator", psn
+                )
+                self.stop()
+
         else:
             logger.warning(
                 "Read sector %d: expected CR ack, got %r — not sending data", psn, ack

@@ -619,6 +619,12 @@ document.getElementById('btn-send').addEventListener('click', async () => {
           setDot('ok');
           btn.disabled = false;
           clearInterval(sendPollInterval);
+        } else if (t.status === 'timed_out') {
+          stat.textContent = '✗ Transfer timed out — machine did not respond';
+          stat.className = 'error';
+          setDot('err');
+          btn.disabled = false;
+          clearInterval(sendPollInterval);
         } else if (t.status === 'error') {
           stat.textContent = `Error: ${t.error}`;
           setDot('err');
