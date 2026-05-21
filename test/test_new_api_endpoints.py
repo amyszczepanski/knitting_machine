@@ -34,7 +34,6 @@ from PIL import Image
 # Re-use the already-patched module and client from test_api so we don't
 # re-import app.api against the real (unpatched) brother_format.
 from .test_api import _api_module, _mock_disk, _mock_disk_image_cls, client
-from .helpers import _make_png_bytes
 
 _state = _api_module._state
 

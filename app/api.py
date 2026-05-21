@@ -60,7 +60,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 from app.brother_format import DiskImage, MachineModel
-from app.image import ImageError, load_image
+from app.image import DitherMode, ImageError, Rotation, load_image
 from app.ports import PortDiscoveryError, PortInfo, discover_ftdi_port, list_all_ports
 
 # ---------------------------------------------------------------------------
@@ -494,6 +494,44 @@ def _require_serial_port() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Image parameter helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_crop(
+    left: int, upper: int, right: int, lower: int
+) -> tuple[int, int, int, int] | None:
+    """Convert four crop edge values from form fields into a crop tuple.
+
+    The frontend sends 0 for crop_right / crop_lower to mean "no crop"
+    (since the original image size isn't known at form-submit time).
+    Returns None when no meaningful crop region is specified.
+    """
+    if right > left and lower > upper:
+        return (left, upper, right, lower)
+    return None
+
+
+def _validated_rotation(value: int) -> Rotation:
+    if value not in (0, 90, 180, 270):
+        raise HTTPException(
+            status_code=422,
+            detail=f"rotation must be 0, 90, 180, or 270; got {value}",
+        )
+    return value  # type: ignore[return-value]
+
+
+def _validated_dither(value: str) -> DitherMode:
+    allowed = ("none", "floyd-steinberg", "bayer")
+    if value not in allowed:
+        raise HTTPException(
+            status_code=422,
+            detail=f"dither must be one of {allowed}; got {value!r}",
+        )
+    return value  # type: ignore[return-value]
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
@@ -726,6 +764,30 @@ def write_pattern(
         ),
     ] = 4
     / 3,
+    flip_horizontal: Annotated[
+        bool,
+        Form(description="Mirror the image left-to-right before scaling."),
+    ] = False,
+    rotation: Annotated[
+        int,
+        Form(description="Clockwise rotation in degrees: 0, 90, 180, or 270."),
+    ] = 0,
+    invert: Annotated[
+        bool,
+        Form(description="Swap knit (1) and background (0) after binarisation."),
+    ] = False,
+    dither: Annotated[
+        str,
+        Form(description="Binarisation method: 'none', 'floyd-steinberg', or 'bayer'."),
+    ] = "none",
+    crop_left: Annotated[
+        int, Form(description="Crop left edge (original pixels).")
+    ] = 0,
+    crop_upper: Annotated[
+        int, Form(description="Crop upper edge (original pixels).")
+    ] = 0,
+    crop_right: Annotated[int, Form(description="Crop right edge (0 = no crop).")] = 0,
+    crop_lower: Annotated[int, Form(description="Crop lower edge (0 = no crop).")] = 0,
 ) -> WritePatternResponse:
     """Upload an image and write it as a knitting pattern.
 
@@ -735,12 +797,18 @@ def write_pattern(
     can then be sent to the machine via POST /send.
     """
     raw = _bytes_from_upload(file)
+    crop = _parse_crop(crop_left, crop_upper, crop_right, crop_lower)
     try:
         result = load_image(
             raw,
             threshold=threshold,
             stitch_aspect_ratio=stitch_aspect_ratio,
             max_rows=_state.disk.max_rows,
+            flip_horizontal=flip_horizontal,
+            rotation=_validated_rotation(rotation),
+            invert=invert,
+            dither=_validated_dither(dither),
+            crop=crop,
         )
     except ImageError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -769,15 +837,29 @@ def preview_image(
     file: Annotated[UploadFile, File(description="Image to preview")],
     threshold: Annotated[int, Form(ge=0, le=255)] = 128,
     stitch_aspect_ratio: Annotated[float, Form(gt=0)] = 4 / 3,
+    flip_horizontal: Annotated[bool, Form()] = False,
+    rotation: Annotated[int, Form()] = 0,
+    invert: Annotated[bool, Form()] = False,
+    dither: Annotated[str, Form()] = "none",
+    crop_left: Annotated[int, Form()] = 0,
+    crop_upper: Annotated[int, Form()] = 0,
+    crop_right: Annotated[int, Form()] = 0,
+    crop_lower: Annotated[int, Form()] = 0,
 ) -> PreviewResponse:
     """Return a scaled/binarised preview PNG without writing to disk."""
     raw = _bytes_from_upload(file)
+    crop = _parse_crop(crop_left, crop_upper, crop_right, crop_lower)
     try:
         result = load_image(
             raw,
             threshold=threshold,
             stitch_aspect_ratio=stitch_aspect_ratio,
             max_rows=_state.disk.max_rows,
+            flip_horizontal=flip_horizontal,
+            rotation=_validated_rotation(rotation),
+            invert=invert,
+            dither=_validated_dither(dither),
+            crop=crop,
         )
     except ImageError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
