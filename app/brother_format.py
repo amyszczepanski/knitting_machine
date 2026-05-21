@@ -758,6 +758,33 @@ class DiskImage:
             else KH930_INIT_PATTERN_OFFSET
         )
 
+    @property
+    def bytes_remaining(self) -> int:
+        """
+        Return the number of bytes still available for new pattern data.
+
+        This is the distance between the current write cursor
+        (_next_pattern_ptr) and the bottom of the pattern memory region
+        (address 0).  A new pattern requires
+        bytes_per_pattern_and_memo(stitches, rows) bytes; if that value
+        exceeds bytes_remaining the write will fail.
+
+        Note: this reflects storage for pattern pixel data and memo blocks
+        only.  The directory has a separate fixed-size limit tracked via
+        _next_slot / _max_patterns.
+        """
+        return self._next_pattern_ptr
+
+    @property
+    def slots_remaining(self) -> int:
+        """
+        Return the number of directory slots still available.
+
+        The directory has a fixed maximum of _max_patterns entries.
+        Each call to write_pattern() consumes one slot.
+        """
+        return self._max_patterns - self._next_slot
+
     # ------------------------------------------------------------------
     # Construction
     # ------------------------------------------------------------------

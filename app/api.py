@@ -54,6 +54,7 @@ from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
@@ -207,6 +208,14 @@ class PatternInfo(BaseModel):
     number: int
     rows: int
     stitches: int
+
+
+class DiskStatusResponse(BaseModel):
+    patterns: list[PatternInfo]
+    bytes_remaining: int
+    bytes_total: int
+    slots_used: int
+    slots_total: int
 
 
 class PatternListResponse(BaseModel):
@@ -507,6 +516,192 @@ def list_patterns() -> PatternListResponse:
                 )
             )
     return PatternListResponse(patterns=patterns)
+
+
+@app.get("/disk/status", response_model=DiskStatusResponse)
+def disk_status() -> DiskStatusResponse:
+    """Return capacity and pattern list for the in-memory disk image.
+
+    Combines the pattern list with storage metrics so the frontend can
+    display a capacity indicator without a separate round-trip.
+    """
+    entries = _state.disk.list_patterns()
+    patterns = [
+        PatternInfo(number=e.number, rows=e.rows, stitches=e.stitches) for e in entries
+    ]
+    return DiskStatusResponse(
+        patterns=patterns,
+        bytes_remaining=_state.disk.bytes_remaining,
+        bytes_total=_state.disk._init_pattern_offset,
+        slots_used=_state.disk._next_slot,
+        slots_total=_state.disk._max_patterns,
+    )
+
+
+@app.get("/disk/download")
+def download_disk() -> Response:
+    """Download the current in-memory disk image as a raw 81,920-byte binary blob.
+
+    The file can be re-uploaded later via POST /disk/upload to restore the
+    full pattern set.  It is also a valid input for any tool that reads
+    Brother KH-940 disk images.
+    """
+    blob = _state.disk.to_disk_image_bytes()
+    log.info("Disk image downloaded (%d bytes)", len(blob))
+    return Response(
+        content=blob,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": 'attachment; filename="knitting_disk.bin"'},
+    )
+
+
+@app.post("/disk/upload")
+async def upload_disk(
+    file: Annotated[UploadFile, File(description="Raw 81,920-byte Brother disk image")],
+    force: Annotated[
+        bool,
+        Form(
+            description=(
+                "If true, replace the current disk image even if it contains patterns. "
+                "If false (default) and the RAM disk is non-empty, return 409."
+            )
+        ),
+    ] = False,
+) -> dict[str, object]:
+    """Replace the in-memory disk image from an uploaded binary blob.
+
+    Accepts either the full 81,920-byte disk image or just the 32,768-byte
+    KH-940 working region.
+
+    If the current RAM disk already contains patterns and ``force`` is not
+    set, the request is rejected with HTTP 409 so the frontend can prompt
+    the user for confirmation before overwriting unsaved work.
+    """
+    raw = _bytes_from_upload(file)
+
+    # Guard: warn before overwriting a non-empty disk.
+    existing = _state.disk.list_patterns()
+    if existing and not force:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "The current disk image contains "
+                    f"{len(existing)} pattern(s). "
+                    "Upload with force=true to overwrite, or reset the disk first."
+                ),
+                "pattern_count": len(existing),
+            },
+        )
+
+    try:
+        new_disk = DiskImage.from_bytes(raw, _state.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Could not parse disk image: {exc}",
+        )
+
+    _state.disk = new_disk
+    patterns = _state.disk.list_patterns()
+    log.info(
+        "Disk image uploaded — %d pattern(s) restored, %d bytes remaining",
+        len(patterns),
+        _state.disk.bytes_remaining,
+    )
+    return {
+        "status": "ok",
+        "patterns_restored": len(patterns),
+        "bytes_remaining": _state.disk.bytes_remaining,
+    }
+
+
+@app.get("/preview/pattern/{number}", response_model=PreviewResponse)
+def preview_pattern(number: int) -> PreviewResponse:
+    """Return a PNG preview for a pattern already stored in the RAM disk.
+
+    This uses the same rendering path as POST /preview but reads pixel
+    data from the disk image rather than an uploaded image file.  Intended
+    for the pattern list thumbnails in the frontend.
+    """
+    try:
+        pixel_rows = _state.disk.read_pattern(number)
+    except KeyError:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Pattern {number} not found in disk image.",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to read pattern {number}: {exc}",
+        )
+
+    png_bytes = _render_preview_png(pixel_rows)
+    data_uri = "data:image/png;base64," + base64.b64encode(png_bytes).decode()
+    h = len(pixel_rows)
+    w = len(pixel_rows[0]) if h else 0
+    return PreviewResponse(width=w, height=h, data_uri=data_uri)
+
+
+@app.delete("/pattern/{number}")
+def delete_pattern(number: int) -> dict[str, object]:
+    """Delete a single pattern from the in-memory disk image.
+
+    The pattern data is removed and the directory is compacted in-place by
+    rebuilding the disk image from the remaining patterns.  All pattern
+    numbers and their data are preserved; only the deleted pattern is lost.
+
+    Raises 404 if the pattern does not exist.
+    """
+    entry = _state.disk.get_pattern_entry(number)
+    if entry is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Pattern {number} not found in disk image.",
+        )
+
+    # Read all surviving patterns before we touch anything.
+    survivors: list[tuple[int, list[list[int]], list[int]]] = []
+    for e in _state.disk.list_patterns():
+        if e.number == number:
+            continue
+        try:
+            pixel_rows = _state.disk.read_pattern(e.number)
+            memo = _state.disk.read_memo(e.number)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to read pattern {e.number} during compaction: {exc}",
+            )
+        survivors.append((e.number, pixel_rows, memo))
+
+    # Rebuild from scratch with the survivors.
+    new_disk = DiskImage.blank(_state.model)
+    for pat_number, pixel_rows, memo in survivors:
+        try:
+            new_disk.write_pattern(pat_number, pixel_rows, memo)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to re-write pattern {pat_number} during compaction: {exc}",
+            )
+
+    _state.disk = new_disk
+    log.info(
+        "Pattern %d deleted — %d pattern(s) remaining, %d bytes remaining",
+        number,
+        len(survivors),
+        _state.disk.bytes_remaining,
+    )
+    return {
+        "status": "ok",
+        "deleted": number,
+        "patterns_remaining": len(survivors),
+        "bytes_remaining": _state.disk.bytes_remaining,
+    }
 
 
 @app.post("/pattern", response_model=WritePatternResponse)
