@@ -606,7 +606,7 @@ def download_disk() -> Response:
     return Response(
         content=blob,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": 'attachment; filename="knitting_disk.bin"'},
+        headers={"Content-Disposition": 'attachment; filename="knitting_disk.dat"'},
     )
 
 

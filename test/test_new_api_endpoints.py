@@ -236,7 +236,7 @@ class TestDiskUpload:
         return client.post(
             "/disk/upload",
             data=data,
-            files={"file": ("knitting_disk.bin", blob, "application/octet-stream")},
+            files={"file": ("knitting_disk.dat", blob, "application/octet-stream")},
         )
 
     def _make_restored_disk(self, *pattern_numbers: int) -> MagicMock:
