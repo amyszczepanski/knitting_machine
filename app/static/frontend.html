@@ -397,6 +397,72 @@
     }
     #toast.show     { opacity: 1; transform: translateX(-50%) translateY(0); }
     #toast.show.err { background: var(--thread); }
+
+    /* ── Stage 2 pixel editor ────────────────────────────────────────── */
+    #editor-panel { display: none; }
+    #editor-panel.active { display: block; }
+
+    #editor-canvas-wrap {
+      overflow: auto;
+      max-height: 60vh;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--paper);
+      cursor: crosshair;
+    }
+
+    /* Canvas and memo column sit side by side */
+    #editor-canvas-area {
+      display: flex;
+      gap: 0;
+      align-items: flex-start;
+    }
+
+    #editor-canvas {
+      display: block;
+      flex-shrink: 0;
+      image-rendering: pixelated;
+    }
+
+    /* Memo column: a scrollable column of number inputs, one per row */
+    #memo-col {
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      border-left: 1px solid var(--border);
+    }
+    #memo-col input[type="number"] {
+      width: 3.5rem;
+      height: var(--cell-h, 8px);   /* set dynamically by JS */
+      min-height: 18px;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      border-radius: 0;
+      background: var(--pale);
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      text-align: center;
+      color: var(--ink);
+      padding: 0 2px;
+      box-sizing: border-box;
+    }
+    #memo-col input[type="number"]:last-child { border-bottom: none; }
+    #memo-col input[type="number"]:focus {
+      outline: none;
+      background: #eef4f0;
+      z-index: 1;
+    }
+    /* Hide spinner arrows on memo inputs */
+    #memo-col input[type="number"]::-webkit-inner-spin-button,
+    #memo-col input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
+    #memo-col input[type="number"] { -moz-appearance: textfield; }
+
+    #editor-status {
+      font-size: 0.72rem;
+      opacity: 0.5;
+      margin-top: 0.5rem;
+      min-height: 1rem;
+    }
   </style>
 </head>
 <body>
@@ -489,6 +555,26 @@
 
       </div>
     </div>
+
+    <!-- ── Stage 2 pixel editor (hidden until Edit is clicked) ──────── -->
+    <div class="panel" id="editor-panel">
+      <div class="panel-head" style="justify-content:space-between;">
+        <span>✎ Pattern Editor — <span id="editor-pattern-num" style="font-style:italic;color:var(--thread);"></span></span>
+        <button class="btn sm" id="btn-editor-back">← Back</button>
+      </div>
+      <div class="panel-body">
+        <div id="editor-canvas-area">
+          <canvas id="editor-canvas"></canvas>
+          <div id="memo-col" title="Per-row memo value (0–15)"></div>
+        </div>
+        <div id="editor-status"></div>
+        <div class="action-row">
+          <button class="btn primary" id="btn-editor-save">Save Changes</button>
+          <button class="btn" id="btn-editor-cancel">Discard</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- ── Right column ───────────────────────────────────────────────── -->
@@ -669,6 +755,7 @@ async function refreshDiskStatus() {
         <div class="pattern-num">${p.number}</div>
         <div class="pattern-dims">${p.stitches}\u202fst\u202f\u00d7\u202f${p.rows}\u202frows</div>
       </div>
+      <button class="btn sm" data-edit="${p.number}" title="Edit pattern ${p.number}">✎</button>
       <button class="btn sm danger" data-del="${p.number}" title="Delete pattern ${p.number}">✕</button>
     </li>`).join('');
 
@@ -680,6 +767,11 @@ async function refreshDiskStatus() {
   // Wire delete buttons
   ul.querySelectorAll('[data-del]').forEach(btn => {
     btn.addEventListener('click', () => deletePattern(parseInt(btn.dataset.del, 10)));
+  });
+
+  // Wire edit buttons
+  ul.querySelectorAll('[data-edit]').forEach(btn => {
+    btn.addEventListener('click', () => openEditor(parseInt(btn.dataset.edit, 10)));
   });
 }
 
@@ -1030,6 +1122,253 @@ document.getElementById('btn-detect-port').addEventListener('click', async () =>
 });
 
 document.getElementById('btn-refresh-list').addEventListener('click', refreshDiskStatus);
+
+/* ── Stage 2 pixel editor ────────────────────────────────────────────── */
+
+// Editor state
+const editorState = {
+  number:   null,   // pattern number being edited
+  pixels:   null,   // list[list[int]] — current in-editor pixel grid
+  memo:     null,   // list[int] — current in-editor memo values
+  width:    0,
+  height:   0,
+  dirty:    false,
+  cellSize: 8,      // px per stitch on canvas
+};
+
+const CELL_MIN = 4;
+const CELL_MAX = 16;
+const GRID_COLOUR   = '#cccccc';
+const KNIT_COLOUR   = '#000000';
+const SKIP_COLOUR   = '#ffffff';
+
+function editorCellSize(width, height) {
+  // Pick the largest cell size that keeps the canvas under ~1200px wide
+  // and ~600px tall, subject to CELL_MIN / CELL_MAX clamps.
+  const maxW = Math.floor(1200 / Math.max(width, 1));
+  const maxH = Math.floor(600  / Math.max(height, 1));
+  return Math.max(CELL_MIN, Math.min(CELL_MAX, maxW, maxH));
+}
+
+function editorRender() {
+  const { pixels, width, height, cellSize } = editorState;
+  const canvas = document.getElementById('editor-canvas');
+  canvas.width  = width  * cellSize;
+  canvas.height = height * cellSize;
+
+  const ctx = canvas.getContext('2d');
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      ctx.fillStyle = pixels[y][x] === 1 ? KNIT_COLOUR : SKIP_COLOUR;
+      ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+    }
+  }
+
+  // Grid lines (skip when cells are very small — too dense to be useful)
+  if (cellSize >= 6) {
+    ctx.strokeStyle = GRID_COLOUR;
+    ctx.lineWidth = 0.5;
+    for (let x = 0; x <= width; x++) {
+      ctx.beginPath();
+      ctx.moveTo(x * cellSize, 0);
+      ctx.lineTo(x * cellSize, height * cellSize);
+      ctx.stroke();
+    }
+    for (let y = 0; y <= height; y++) {
+      ctx.beginPath();
+      ctx.moveTo(0, y * cellSize);
+      ctx.lineTo(width * cellSize, y * cellSize);
+      ctx.stroke();
+    }
+  }
+}
+
+function editorBuildMemoCol() {
+  const { memo, height, cellSize } = editorState;
+  const col = document.getElementById('memo-col');
+  col.innerHTML = '';
+  // Pass cell size to CSS custom property so inputs match row height
+  col.style.setProperty('--cell-h', cellSize + 'px');
+
+  for (let y = 0; y < height; y++) {
+    const inp = document.createElement('input');
+    inp.type  = 'number';
+    inp.min   = 0;
+    inp.max   = 15;
+    inp.value = memo[y];
+    inp.style.height = Math.max(18, cellSize) + 'px';
+    inp.dataset.row = y;
+    inp.addEventListener('change', () => {
+      const v = Math.max(0, Math.min(15, parseInt(inp.value, 10) || 0));
+      inp.value = v;
+      editorState.memo[y] = v;
+      editorState.dirty = true;
+      editorSetStatus(`Row ${y} memo → ${v}`);
+    });
+    col.appendChild(inp);
+  }
+}
+
+function editorSetStatus(msg) {
+  document.getElementById('editor-status').textContent = msg;
+}
+
+function editorCanvasClick(e) {
+  const canvas = document.getElementById('editor-canvas');
+  const rect   = canvas.getBoundingClientRect();
+  const scaleX = canvas.width  / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const cx = (e.clientX - rect.left)  * scaleX;
+  const cy = (e.clientY - rect.top)   * scaleY;
+
+  const x = Math.floor(cx / editorState.cellSize);
+  const y = Math.floor(cy / editorState.cellSize);
+
+  if (x < 0 || x >= editorState.width || y < 0 || y >= editorState.height) return;
+
+  editorState.pixels[y][x] ^= 1;
+  editorState.dirty = true;
+  editorRender();
+  editorSetStatus(`Toggled stitch (${x}, ${y}) → ${editorState.pixels[y][x] === 1 ? 'knit' : 'skip'}`);
+}
+
+// Paint-drag support: track pointer down, draw on mousemove while held.
+let _editorPainting = false;
+let _editorPaintValue = null;
+
+function editorPointerDown(e) {
+  const canvas = document.getElementById('editor-canvas');
+  const rect   = canvas.getBoundingClientRect();
+  const scaleX = canvas.width  / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const cx = (e.clientX - rect.left)  * scaleX;
+  const cy = (e.clientY - rect.top)   * scaleY;
+  const x = Math.floor(cx / editorState.cellSize);
+  const y = Math.floor(cy / editorState.cellSize);
+  if (x < 0 || x >= editorState.width || y < 0 || y >= editorState.height) return;
+
+  // On initial click, decide whether we're painting knit (1) or skip (0)
+  // by toggling the clicked cell and using its new value as the paint value.
+  editorState.pixels[y][x] ^= 1;
+  _editorPaintValue = editorState.pixels[y][x];
+  _editorPainting = true;
+  editorState.dirty = true;
+  editorRender();
+  editorSetStatus(`Painting — stitch (${x}, ${y}) → ${_editorPaintValue === 1 ? 'knit' : 'skip'}`);
+}
+
+function editorPointerMove(e) {
+  if (!_editorPainting) return;
+  const canvas = document.getElementById('editor-canvas');
+  const rect   = canvas.getBoundingClientRect();
+  const scaleX = canvas.width  / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const cx = (e.clientX - rect.left)  * scaleX;
+  const cy = (e.clientY - rect.top)   * scaleY;
+  const x = Math.floor(cx / editorState.cellSize);
+  const y = Math.floor(cy / editorState.cellSize);
+  if (x < 0 || x >= editorState.width || y < 0 || y >= editorState.height) return;
+  if (editorState.pixels[y][x] === _editorPaintValue) return;  // already correct
+  editorState.pixels[y][x] = _editorPaintValue;
+  editorState.dirty = true;
+  editorRender();
+}
+
+function editorPointerUp() {
+  _editorPainting = false;
+}
+
+async function openEditor(number) {
+  editorSetStatus('Loading…');
+
+  let data;
+  try {
+    data = await apiFetch(`/pattern/${number}/pixels`);
+  } catch (e) {
+    toast(`Could not load pattern ${number}: ${e.message}`, true, 4000);
+    return;
+  }
+
+  // Deep-copy so edits don't mutate any shared reference.
+  editorState.number  = number;
+  editorState.pixels  = data.pixels.map(row => row.slice());
+  editorState.memo    = data.memo.slice();
+  editorState.width   = data.width;
+  editorState.height  = data.height;
+  editorState.dirty   = false;
+  editorState.cellSize = editorCellSize(data.width, data.height);
+
+  document.getElementById('editor-pattern-num').textContent = number;
+
+  // Show editor, hide import panel
+  document.querySelector('#editor-panel').classList.add('active');
+  document.querySelector('.panel:first-child').style.display = 'none';
+
+  editorRender();
+  editorBuildMemoCol();
+  editorSetStatus(`${data.width}\u202fstitches \u00d7 ${data.height}\u202frows — click or drag to toggle stitches`);
+
+  // Wire canvas interaction (remove any previous listeners by replacing the element)
+  const oldCanvas = document.getElementById('editor-canvas');
+  const newCanvas = oldCanvas.cloneNode(false);
+  oldCanvas.parentNode.replaceChild(newCanvas, oldCanvas);
+  // Re-render onto the new canvas element
+  editorRender();
+  newCanvas.addEventListener('pointerdown', editorPointerDown);
+  newCanvas.addEventListener('pointermove', editorPointerMove);
+  newCanvas.addEventListener('pointerup',   editorPointerUp);
+  newCanvas.addEventListener('pointerleave', editorPointerUp);
+}
+
+function closeEditor() {
+  document.querySelector('#editor-panel').classList.remove('active');
+  document.querySelector('.panel:first-child').style.display = '';
+  editorState.number = null;
+  editorState.pixels = null;
+  editorState.memo   = null;
+  editorState.dirty  = false;
+}
+
+document.getElementById('btn-editor-back').addEventListener('click', () => {
+  if (editorState.dirty) {
+    if (!confirm('You have unsaved changes. Discard them and go back?')) return;
+  }
+  closeEditor();
+});
+
+document.getElementById('btn-editor-cancel').addEventListener('click', () => {
+  if (editorState.dirty) {
+    if (!confirm('Discard all changes?')) return;
+  }
+  closeEditor();
+});
+
+document.getElementById('btn-editor-save').addEventListener('click', async () => {
+  const { number, pixels, memo } = editorState;
+  if (number === null) return;
+
+  const btn = document.getElementById('btn-editor-save');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>\u202fSaving\u2026';
+
+  try {
+    const data = await apiFetch(`/pattern/${number}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pixels, memo }),
+    });
+    editorState.dirty = false;
+    toast(`Pattern ${data.number} saved — ${data.width}\u202f\u00d7\u202f${data.height}`);
+    refreshDiskStatus();
+    closeEditor();
+  } catch (e) {
+    toast(`Save failed: ${e.message}`, true, 5000);
+    editorSetStatus(`Save failed: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save Changes';
+  }
+});
 
 /* ── Init ────────────────────────────────────────────────────────────── */
 loadConfig();

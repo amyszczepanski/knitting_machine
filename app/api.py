@@ -249,6 +249,23 @@ class PreviewResponse(BaseModel):
     data_uri: str
 
 
+class PatternPixelsResponse(BaseModel):
+    """Pixel grid and memo values for a committed pattern."""
+
+    number: int
+    pixels: list[list[int]]
+    memo: list[int]
+    width: int
+    height: int
+
+
+class PatternEditRequest(BaseModel):
+    """Edited pixel grid and memo values to write back for a pattern."""
+
+    pixels: list[list[int]]
+    memo: list[int]
+
+
 class ConfigRequest(BaseModel):
     serial_port: str | None = None
     baud_rate: int | None = None
@@ -740,6 +757,145 @@ def delete_pattern(number: int) -> dict[str, object]:
         "patterns_remaining": len(survivors),
         "bytes_remaining": _state.disk.bytes_remaining,
     }
+
+
+@app.get("/pattern/{number}/pixels", response_model=PatternPixelsResponse)
+def get_pattern_pixels(number: int) -> PatternPixelsResponse:
+    """Return the pixel grid and memo values for a committed pattern.
+
+    Used by the Stage 2 pixel editor to load a pattern for editing.
+    Raises 404 if the pattern does not exist.
+    """
+    entry = _state.disk.get_pattern_entry(number)
+    if entry is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Pattern {number} not found in disk image.",
+        )
+
+    try:
+        pixels = _state.disk.read_pattern(number)
+        memo = _state.disk.read_memo(number)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to read pattern {number}: {exc}",
+        )
+
+    h = len(pixels)
+    w = len(pixels[0]) if h else 0
+    return PatternPixelsResponse(
+        number=number,
+        pixels=pixels,
+        memo=memo,
+        width=w,
+        height=h,
+    )
+
+
+@app.put("/pattern/{number}", response_model=WritePatternResponse)
+def edit_pattern(number: int, req: PatternEditRequest) -> WritePatternResponse:
+    """Overwrite an existing committed pattern with edited pixel and memo data.
+
+    Performs a delete-then-rewrite compaction internally so the caller does not
+    need to orchestrate two separate requests.  All other patterns are preserved.
+
+    Raises 404 if the pattern does not exist.
+    Raises 422 if the pixel data is invalid (empty, unequal row widths, stitch
+    count out of range) or if any memo value is outside 0–15.
+    """
+
+    entry = _state.disk.get_pattern_entry(number)
+    if entry is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Pattern {number} not found in disk image.",
+        )
+
+    # --- Validate pixels ---
+    pixels = req.pixels
+    if not pixels:
+        raise HTTPException(status_code=422, detail="pixels must not be empty.")
+    stitches = len(pixels[0])
+    if stitches == 0 or stitches > 200:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Stitch count {stitches} is out of range 1–200.",
+        )
+    for i, row in enumerate(pixels):
+        if len(row) != stitches:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Row {i} has {len(row)} stitches; expected {stitches}.",
+            )
+        for j, val in enumerate(row):
+            if val not in (0, 1):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"pixels[{i}][{j}] = {val!r}; must be 0 or 1.",
+                )
+
+    # --- Validate memo ---
+    memo = req.memo
+    for i, val in enumerate(memo):
+        if not (0 <= val <= 15):
+            raise HTTPException(
+                status_code=422,
+                detail=f"memo[{i}] = {val!r}; must be 0–15.",
+            )
+
+    # --- Read all surviving patterns (everyone except the one being edited) ---
+    all_patterns: list[tuple[int, list[list[int]], list[int]]] = []
+    for e in _state.disk.list_patterns():
+        if e.number == number:
+            continue
+        try:
+            survivor_pixels = _state.disk.read_pattern(e.number)
+            survivor_memo = _state.disk.read_memo(e.number)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to read pattern {e.number} during compaction: {exc}",
+            )
+        all_patterns.append((e.number, survivor_pixels, survivor_memo))
+
+    # Include the edited pattern and sort by number so that write order matches
+    # slot order.  list_patterns() stops at the first FINHDR/empty slot, so
+    # every valid pattern must occupy a contiguous run of slots starting at 0;
+    # writing out of numerical order would place the FINHDR before some entries
+    # and cause them to be invisible to subsequent reads.
+    all_patterns.append((number, pixels, memo))
+    all_patterns.sort(key=lambda t: t[0])
+
+    # --- Rebuild disk from scratch with all patterns in slot order ---
+    new_disk = DiskImage.blank(_state.model)
+    for pat_number, pat_pixels, pat_memo in all_patterns:
+        try:
+            new_disk.write_pattern(pat_number, pat_pixels, pat_memo)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to re-write pattern {pat_number} during compaction: {exc}",
+            )
+
+    _state.disk = new_disk
+    rows = len(pixels)
+    log.info(
+        "Pattern %d edited — %d stitches × %d rows, %d bytes remaining",
+        number,
+        stitches,
+        rows,
+        _state.disk.bytes_remaining,
+    )
+    return WritePatternResponse(
+        number=number,
+        width=stitches,
+        height=rows,
+        orig_width=stitches,
+        orig_height=rows,
+    )
 
 
 @app.post("/pattern", response_model=WritePatternResponse)
