@@ -271,3 +271,51 @@ class TestCrop:
         )
         assert result.width == 50
         assert result.height == 50
+
+
+class TestTargetStitches:
+    """target_stitches scales the image to an exact stitch width."""
+
+    def test_target_stitches_sets_exact_width(self):
+        result = load_image(
+            _make_png_bytes(width=400, height=200),
+            target_stitches=80,
+            stitch_aspect_ratio=1.0,
+        )
+        assert result.width == 80
+
+    def test_target_stitches_preserves_aspect_ratio(self):
+        # 400×200 scaled to 100 stitches → height should be 50
+        result = load_image(
+            _make_png_bytes(width=400, height=200),
+            target_stitches=100,
+            stitch_aspect_ratio=1.0,
+        )
+        assert result.width == 100
+        assert result.height == 50
+
+    def test_target_stitches_scales_up(self):
+        # Images narrower than target should be enlarged.
+        result = load_image(
+            _make_png_bytes(width=10, height=10),
+            target_stitches=50,
+            stitch_aspect_ratio=1.0,
+        )
+        assert result.width == 50
+
+    def test_target_stitches_out_of_range_raises(self):
+        with pytest.raises(ValueError, match="target_stitches must be between"):
+            load_image(_make_png_bytes(), target_stitches=0, stitch_aspect_ratio=1.0)
+        with pytest.raises(ValueError, match="target_stitches must be between"):
+            load_image(_make_png_bytes(), target_stitches=201, stitch_aspect_ratio=1.0)
+
+    def test_target_stitches_overrides_max_width(self):
+        # max_width=200 should be ignored when target_stitches is set to a
+        # smaller value.
+        result = load_image(
+            _make_png_bytes(width=200, height=100),
+            target_stitches=60,
+            max_width=200,
+            stitch_aspect_ratio=1.0,
+        )
+        assert result.width == 60

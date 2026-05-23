@@ -197,7 +197,7 @@ class TestDiskDownload:
     def test_content_disposition_filename(self):
         resp = client.get("/disk/download")
         cd = resp.headers.get("content-disposition", "")
-        assert "knitting_disk.bin" in cd
+        assert "knitting_disk.dat" in cd
 
     def test_body_is_blob_from_disk(self):
         resp = client.get("/disk/download")

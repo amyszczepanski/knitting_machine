@@ -79,6 +79,7 @@ def load_image(
     source: Union[str, Path, bytes, "Image.Image"],
     *,
     max_width: int = MAX_NEEDLES,
+    target_stitches: int | None = None,
     max_rows: int | None = None,
     threshold: int = 128,
     stitch_aspect_ratio: float = DEFAULT_STITCH_ASPECT_RATIO,
@@ -95,7 +96,13 @@ def load_image(
     source:
         A file path, raw image bytes, or an already-open Pillow Image.
     max_width:
-        Maximum output width in pixels/stitches (default 200).
+        Maximum output width in pixels/stitches (default 200).  Ignored when
+        ``target_stitches`` is set.
+    target_stitches:
+        If set, the image is scaled uniformly so that its width equals exactly
+        this many stitches (1–200).  Height is adjusted proportionally; the
+        stitch-aspect-ratio stretch and ``max_rows`` limit are still applied
+        afterwards.  Takes precedence over ``max_width``.
     max_rows:
         Maximum output height in rows.  When set, the image is scaled down
         proportionally if the height after the stitch-aspect-ratio stretch
@@ -139,7 +146,8 @@ def load_image(
         image cannot be scaled to fit within max_rows.
     ValueError
         If stitch_aspect_ratio is not positive, max_rows is not a positive
-        integer, or rotation is not one of {0, 90, 180, 270}.
+        integer, rotation is not one of {0, 90, 180, 270}, or
+        target_stitches is outside 1–200.
     """
     if stitch_aspect_ratio <= 0:
         raise ValueError(
@@ -149,6 +157,11 @@ def load_image(
         raise ValueError(f"max_rows must be a positive integer, got {max_rows}")
     if rotation not in (0, 90, 180, 270):
         raise ValueError(f"rotation must be 0, 90, 180, or 270; got {rotation}")
+    if target_stitches is not None and not (1 <= target_stitches <= MAX_NEEDLES):
+        raise ValueError(
+            f"target_stitches must be between 1 and {MAX_NEEDLES}, "
+            f"got {target_stitches}"
+        )
 
     img = _open(source)
     orig_width, orig_height = img.size
@@ -178,9 +191,16 @@ def load_image(
     # --- 4. Convert to greyscale before scaling ---
     img = img.convert("L")
 
-    # --- 5. Scale so width ≤ max_width, preserving aspect ratio ---
+    # --- 5. Scale width to target_stitches (exact) or ≤ max_width (cap) ---
     w, h = img.size
-    if w > max_width:
+    if target_stitches is not None:
+        # Scale uniformly so width == target_stitches exactly.
+        new_w = target_stitches
+        new_h = max(1, round(h * target_stitches / w)) if w != target_stitches else h
+        if w != new_w or h != new_h:
+            img = img.resize((new_w, new_h), _RESAMPLE)
+            w, h = img.size
+    elif w > max_width:
         scale = max_width / w
         new_w = max_width
         new_h = max(1, round(h * scale))

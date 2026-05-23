@@ -363,8 +363,19 @@ def _run_receive(task_id: str) -> None:
             "[%s] Creating PDDEmulator (blank disk — waiting for machine to write)",
             task_id,
         )
+
+        # Track whether the machine actually wrote any sector pair.
+        # read_sector_files() always returns all 80 sectors (zero-filled for
+        # any sector never written), so we cannot use it to detect a timeout.
+        # The on_write callback fires once per completed sector pair; an empty
+        # list after run() means the machine never initiated a save.
+        sectors_written: list[int] = []
+
+        def _on_sector_pair_written(_path: object) -> None:
+            sectors_written.append(1)
+
         with tempfile.TemporaryDirectory() as tmpdir:
-            emulator = PDDEmulator(disk_dir=tmpdir)
+            emulator = PDDEmulator(disk_dir=tmpdir, on_write=_on_sector_pair_written)
 
             log.info(
                 "[%s] Opening serial port %s at %d baud — waiting for machine",
@@ -373,10 +384,21 @@ def _run_receive(task_id: str) -> None:
                 baud,
             )
             emulator.run(port=port, baudrate=baud, idle_timeout=10)
-            log.info("[%s] emulator.run() returned — save complete", task_id)
+            log.info("[%s] emulator.run() returned", task_id)
 
             # ---- Capture everything the machine wrote ----------------------
             dat_files, id_files = emulator.read_sector_files()
+
+        # If on_write was never called the machine never initiated a save.
+        if not sectors_written:
+            task.status = _TaskStatus.TIMED_OUT
+            log.warning(
+                "[%s] Receive task timed out — machine did not initiate a save",
+                task_id,
+            )
+            return
+
+        log.info("[%s] Machine wrote %d sector pair(s)", task_id, len(sectors_written))
 
         # Persist sector state so the next send can serve it back.
         _state.sector_dat = dat_files
@@ -920,6 +942,17 @@ def write_pattern(
         ),
     ] = 4
     / 3,
+    target_stitches: Annotated[
+        int | None,
+        Form(
+            description=(
+                "Scale image uniformly to this exact stitch width (1–200). "
+                "Overrides the default 200-stitch cap. Leave unset to use max_width."
+            ),
+            ge=1,
+            le=200,
+        ),
+    ] = None,
     flip_horizontal: Annotated[
         bool,
         Form(description="Mirror the image left-to-right before scaling."),
@@ -959,6 +992,7 @@ def write_pattern(
             raw,
             threshold=threshold,
             stitch_aspect_ratio=stitch_aspect_ratio,
+            target_stitches=target_stitches,
             max_rows=_state.disk.max_rows,
             flip_horizontal=flip_horizontal,
             rotation=_validated_rotation(rotation),
@@ -993,6 +1027,7 @@ def preview_image(
     file: Annotated[UploadFile, File(description="Image to preview")],
     threshold: Annotated[int, Form(ge=0, le=255)] = 128,
     stitch_aspect_ratio: Annotated[float, Form(gt=0)] = 4 / 3,
+    target_stitches: Annotated[int | None, Form(ge=1, le=200)] = None,
     flip_horizontal: Annotated[bool, Form()] = False,
     rotation: Annotated[int, Form()] = 0,
     invert: Annotated[bool, Form()] = False,
@@ -1010,6 +1045,7 @@ def preview_image(
             raw,
             threshold=threshold,
             stitch_aspect_ratio=stitch_aspect_ratio,
+            target_stitches=target_stitches,
             max_rows=_state.disk.max_rows,
             flip_horizontal=flip_horizontal,
             rotation=_validated_rotation(rotation),
@@ -1067,7 +1103,18 @@ def send_to_machine() -> SendResponse:
 
 
 @app.post("/receive", response_model=SendResponse)
-def receive_from_machine() -> SendResponse:
+def receive_from_machine(
+    force: Annotated[
+        bool,
+        Form(
+            description=(
+                "If true, overwrite the current in-memory disk image even if it "
+                "contains patterns. If false (default) and the RAM disk is "
+                "non-empty, return 409."
+            )
+        ),
+    ] = False,
+) -> SendResponse:
     """Run the emulator in receive mode so the machine can save to it.
 
     Start this endpoint, then initiate a save on the KH-940 keypad.  The
@@ -1090,6 +1137,21 @@ def receive_from_machine() -> SendResponse:
             )
 
     _require_serial_port()  # raises 503 if no port is configured
+
+    # Guard: warn before overwriting a non-empty disk.
+    existing = _state.disk.list_patterns()
+    if existing and not force:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "The current disk image contains "
+                    f"{len(existing)} pattern(s). "
+                    "Receive with force=true to overwrite, or reset the disk first."
+                ),
+                "pattern_count": len(existing),
+            },
+        )
 
     task_id = str(uuid.uuid4())
     _state.tasks[task_id] = _TaskState()
