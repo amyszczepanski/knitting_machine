@@ -417,6 +417,10 @@ class PDDEmulator:
                 logger.debug("RX byte: 0x%02X (%r)", b[0], chr(b[0]))
                 self._dispatch(io, chr(b[0]))
         finally:
+            ser.flush()  # drain any bytes still in the OS TX buffer
+            import time
+
+            time.sleep(1.5)  # give the machine ~1.5 s to finish reading the last sector
             ser.close()
             logger.info("PDDEmulator stopped")
 

@@ -2,7 +2,7 @@
 brother_format.py — Brother KH-930/940 disk image format encoder/decoder.
 
 Binary format references:
-  KH-930: reverse-engineered by Steve Conklin, Travis Goodspeed, and others;
+  KH-930: reverse-engineered by Steve Conklin, Limor Fried, Travis Goodspeed, and others;
           see: https://github.com/adafruit/knitting_machine
   KH-940: documented in the knittington KH940 format spec
           https://github.com/stg/knittington/blob/master/doc/kh940_format.txt
