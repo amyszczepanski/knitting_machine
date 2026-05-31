@@ -313,7 +313,7 @@ def encode_pattern_data(
     result = bytearray(total_bytes)
     base = total_bytes - 1  # local base within result
 
-    for row_idx, row_pixels in enumerate(pixel_rows):
+    for row_idx, row_pixels in enumerate(reversed(pixel_rows)):
         row_nibbles = encode_row(row_pixels, stitches)
         for local_nib_idx, nib_val in enumerate(row_nibbles):
             nibble_index = row_idx * npr + local_nib_idx
@@ -345,7 +345,7 @@ def decode_pattern_data(
             for local_nib in range(npr)
         ]
         pixel_rows.append(decode_row(nibble_list, stitches))
-    return pixel_rows
+    return pixel_rows[::-1]
 
 
 # ---------------------------------------------------------------------------
