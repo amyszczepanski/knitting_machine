@@ -365,6 +365,7 @@ def encode_memo(rows: int, memo_values: Sequence[int] | None = None) -> bytearra
     """
     values = list(memo_values) if memo_values else []
     values += [0] * (rows - len(values))  # pad to length
+    values = values[::-1]
 
     total_bytes = bytes_for_memo(rows)
     result = bytearray(total_bytes)
@@ -385,7 +386,7 @@ def decode_memo(
     Decode the memo block from `data` at `memo_offset`.
     Returns a list of `rows` nibble values (0–15).
     """
-    return [read_nibble(data, memo_offset, row_idx) for row_idx in range(rows)]
+    return [read_nibble(data, memo_offset, row_idx) for row_idx in range(rows - 1, -1, -1)]
 
 
 # ---------------------------------------------------------------------------
