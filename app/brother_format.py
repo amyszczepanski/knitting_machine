@@ -386,7 +386,9 @@ def decode_memo(
     Decode the memo block from `data` at `memo_offset`.
     Returns a list of `rows` nibble values (0–15).
     """
-    return [read_nibble(data, memo_offset, row_idx) for row_idx in range(rows - 1, -1, -1)]
+    return [
+        read_nibble(data, memo_offset, row_idx) for row_idx in range(rows - 1, -1, -1)
+    ]
 
 
 # ---------------------------------------------------------------------------
